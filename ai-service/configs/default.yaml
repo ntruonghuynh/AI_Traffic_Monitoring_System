@@ -1,0 +1,48 @@
+schema_version: "1.0"
+device: auto
+
+vehicle_detection:
+  model_path: models/yolov8m.pt
+  confidence: 0.30
+  iou: 0.50
+  image_size: 640
+  target_classes:
+    - car
+    - motorcycle
+    - bus
+    - truck
+
+tracking:
+  tracker_config: configs/bytetrack.yaml
+  persist: true
+  require_track_id: true
+  max_missing_frames: 30
+
+line_crossing:
+  # Normalized coordinates: (0, 0) is top-left and (1, 1) is bottom-right.
+  start: [0.0, 0.48]
+  end: [1.0, 0.48]
+  normalized: true
+  direction: positive_to_negative
+  tolerance_pixels: 8.0
+  max_missing_frames: 30
+  allow_multiple_crossings: false
+
+plate_detection:
+  model_path: models/license_plate_detector.pt
+  confidence: 0.30
+  iou: 0.50
+  image_size: 640
+
+ocr:
+  languages: [en, vi]
+  min_confidence: 0.35
+  use_preprocessing: true
+
+output:
+  save_evidence_images: true
+  save_annotated_video: false
+  video_codec: mp4v
+  legacy_csv: false
+  legacy_sqlite: false
+  progress_interval_frames: 100

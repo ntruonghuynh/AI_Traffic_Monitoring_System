@@ -1,88 +1,123 @@
-# Phát hiện vi phạm giao thông và nhận diện biển số
+# Traffic Violation Detection System
 
-Dự án thử nghiệm xử lý video bằng thị giác máy tính: phát hiện phương tiện, đánh dấu trường hợp cắt qua vạch dừng được cấu hình sẵn, nhận diện biển số bằng OCR và xuất kết quả để kiểm tra.
+Dự án thử nghiệm Computer Vision phát hiện phương tiện, theo dõi chuyển động, ghi nhận candidate cắt qua vạch và nhận diện biển số. Phase 01 đã tách AI core thành service Python modular để tích hợp Backend/queue/database trong các phase sau.
 
-> **Lưu ý:** Đây là công cụ hỗ trợ thử nghiệm, không phải hệ thống xử phạt tự động. Kết quả mô hình có thể sai và cần được người có thẩm quyền xác minh.
+> **Lưu ý:** Hệ thống hiện chưa đọc trạng thái đèn giao thông. Crossing event chỉ là `LINE_CROSSING_CANDIDATE`, không phải xác nhận vi phạm pháp lý. Mọi kết quả phải được người có thẩm quyền kiểm tra.
 
-## Tính năng
+## Phase 01 — Refactor AI Core
 
-- Phát hiện ô tô, xe máy, xe buýt và xe tải bằng Ultralytics YOLO.
-- Phát hiện vùng biển số bằng mô hình YOLO riêng trong `models/`.
-- Tiền xử lý ảnh và đọc ký tự biển số bằng EasyOCR (ngôn ngữ Anh, Việt).
-- Hiển thị video có vạch kiểm tra và thông tin phát hiện.
-- Ghi loại phương tiện/thời điểm vào SQLite; xuất loại phương tiện và biển số đọc được ra CSV.
+AI service mới nằm trong [`ai-service/`](ai-service/README.md) với các khả năng:
 
-## Quy trình hiện tại
+- Reusable YOLO `VehicleDetector`, resolve target class từ label thật của model.
+- Stateful ByteTrack integration qua `VehicleTracker`.
+- Temporal line crossing dùng bottom-center, direction, hysteresis và duplicate prevention.
+- Tách `PlateDetector`, `PlateRecognizer` và context-aware `PlateValidator`.
+- Headless `VideoProcessor`, không phụ thuộc `cv2.imshow()`.
+- JSON contract có schema version, job/event UUID, nullable OCR fields và relative artifact paths.
+- Evidence JPEG, optional annotated video và optional CSV/SQLite compatibility.
+- YAML config, environment overrides, structured logging và CLI.
+- Unit tests không cần model weights.
 
-`traffic_violation_detection.py` đọc video `7.mp4` từ thư mục gốc. Một phương tiện được đánh dấu khi hộp phát hiện đi qua đường ngang đặt tại 48% chiều cao khung hình. Chương trình mở cửa sổ video; nhấn `q` để dừng. Kết quả được ghi vào:
+Tài liệu kỹ thuật:
 
-- `violators.csv`: loại phương tiện và biển số OCR (hoặc `None`).
-- `violations.db`: bảng `violations` gồm `id`, `vehicle_type`, `timestamp`.
-- `plates/` và `plates_detected/`: ảnh biển số đã cắt/tiền xử lý.
+- [Audit kiến trúc cũ và quyết định refactor](docs/PHASE_01_AUDIT.md)
+- [Hướng dẫn AI service](ai-service/README.md)
+- [Tổng kết Phase 01](docs/PHASE_01_SUMMARY.md)
 
-Đường kiểm tra hiện là hằng số hình học trong mã, không đọc trạng thái đèn giao thông. Vì vậy, việc vượt đường này không đồng nghĩa với xác nhận vi phạm luật giao thông. Tracker SORT có trong repo nhưng luồng chính hiện không gọi tracker.
+## Kiến trúc
 
-## Cấu trúc chính
+```text
+Input video
+    |
+Vehicle detection + ByteTrack
+    |
+Temporal line-crossing analysis
+    |
+LINE_CROSSING_CANDIDATE
+    |
+Plate detection + EasyOCR + validation
+    |
+results.json + evidence images + optional annotated video
+```
 
 ```text
 .
-├── traffic_violation_detection.py   # Chạy phát hiện trên video
-├── license_plate_recognition.py     # Phát hiện biển số và OCR
-├── kiemtradulieudatabase.py         # In các dòng trong violations.db
-├── sort.py                          # Triển khai tracker SORT
-├── requirements.txt                # Danh sách dependency hiện tại
-├── yolov8m.pt                       # Cần tự cung cấp; không nằm trong Git
-└── models/
-    └── license_plate_detector.pt    # Cần tự cung cấp; không nằm trong Git
+├── ai-service/                     # AI core mới
+│   ├── configs/
+│   ├── models/                    # weights local, không commit
+│   ├── src/traffic_ai/
+│   ├── tests/
+│   └── pyproject.toml
+├── docs/
+├── traffic_violation_detection.py  # legacy entry point, được giữ lại
+├── license_plate_recognition.py     # legacy OCR pipeline
+├── sort.py                          # legacy SORT demo, không dùng trong service mới
+└── requirements.txt
 ```
-
-## Yêu cầu
-
-- Python 3.10 hoặc phiên bản tương thích với các package đã ghim trong `requirements.txt`.
-- GPU NVIDIA/CUDA tương thích với PyTorch CUDA 11.8; mã khởi tạo EasyOCR với `gpu=True`.
-- Quyền truy cập camera/video và giao diện đồ họa để hiển thị cửa sổ OpenCV.
-- Hai model weights đúng đường dẫn: `yolov8m.pt` và `models/license_plate_detector.pt`.
-- Video đầu vào hợp pháp, đặt tại `7.mp4` ở thư mục gốc.
-
-Các model weights không được quản lý trong Git. Tải/cung cấp chúng từ nguồn mà bạn có quyền sử dụng và đặt đúng đường dẫn nêu trên. Nếu đổi model biển số, kiểm tra lại định dạng đầu ra và độ chính xác của OCR.
 
 ## Cài đặt
 
-> Các phiên bản trong `requirements.txt` là snapshot môi trường phát triển, có ghim PyTorch CUDA 11.8 và cả hai gói `opencv-python`/`opencv-python-headless`. Có thể cần điều chỉnh theo hệ điều hành, phiên bản Python và CUDA của máy.
+Yêu cầu Python 3.10–3.12; khuyến nghị Python 3.11.
 
 ```bash
-git clone <URL-repository-cua-ban>
-cd <thu-muc-repository>
-python -m venv .venv
+python3.11 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
+python -m pip install -e "ai-service[dev]"
+```
+
+`requirements.txt` ở repository root cài service mới và dependency cho legacy SORT demo:
+
+```bash
 python -m pip install -r requirements.txt
 ```
 
-> Trên Windows, kích hoạt môi trường bằng `.venv\Scripts\activate`. Cài PyTorch theo hướng dẫn chính thức tương ứng với CUDA của máy nếu lệnh cài requirements không tìm được wheel phù hợp. Máy Mac/CPU không chạy được cấu hình hiện tại nguyên trạng: cần cài bản PyTorch phù hợp và đổi `gpu=True` trong `license_plate_recognition.py` sang cấu hình OCR phù hợp trước khi chạy.
+Nếu dùng GPU, cài PyTorch build phù hợp CUDA/MPS của máy. Không cò ghim cứng CUDA 11.8 cho mọi platform.
 
-## Chạy
+## Model weights
 
-1. Đặt video thử nghiệm của bạn ở thư mục gốc và đặt tên `7.mp4`.
-2. Kiểm tra hai model weights đã có đúng vị trí.
-3. Chạy:
+Không commit weights vào Git. Mặc định đặt tại:
 
-```bash
-python traffic_violation_detection.py
+```text
+ai-service/models/yolov8m.pt
+ai-service/models/license_plate_detector.pt
 ```
 
-4. Nhấn `q` trên cửa sổ video để kết thúc. CSV và ảnh kết quả được ghi trong thư mục dự án.
-5. Để xem dữ liệu SQLite đã lưu:
+Có thể override path bằng `ai-service/configs/default.yaml`, `TRAFFIC_AI_VEHICLE_MODEL_PATH` và `TRAFFIC_AI_PLATE_MODEL_PATH`.
+
+## Chạy AI service
 
 ```bash
-python kiemtradulieudatabase.py
+python -m traffic_ai \
+  --input /path/to/video.mp4 \
+  --output /path/to/results
 ```
 
-Mỗi lần chạy ghi thêm vào `violations.db`, còn `violators.csv` được ghi đè. Sao lưu hoặc đổi tên kết quả cần giữ trước khi chạy lại.
+Tùy chọn:
+
+```bash
+python -m traffic_ai \
+  --input /path/to/video.mp4 \
+  --output /path/to/results \
+  --device cpu \
+  --annotated-video
+```
+
+Output chính là `results.json`; mỗi evidence path bên trong JSON tương đối với result directory.
+
+## Chạy test
+
+```bash
+cd ai-service
+../.venv/bin/python -m pytest
+../.venv/bin/python -m pytest --cov=traffic_ai --cov-report=term-missing
+```
+
+Integration test tự skip nếu chưa cung cấp video và hai model weights. Xem lệnh opt-in trong [AI service README](ai-service/README.md#chạy-test).
 
 ## Kết quả minh họa
 
-Lần chạy thử với video `7.mp4` xử lý 520 frame và ghi nhận 36 lượt phương tiện cắt qua vạch kiểm tra: 17 ô tô, 15 xe máy và 4 xe tải. Các khung màu đỏ thể hiện phương tiện được phát hiện; khung màu xanh và ảnh phóng to thể hiện vùng biển số.
+Baseline cũ với `7.mp4` xử lý 520 frame và ghi nhận 36 lượt bbox cắt qua vạch: 17 ô tô, 15 xe máy và 4 xe tải. Đây không phải accuracy benchmark và không phải số vi phạm đã xác minh.
 
 ![Phát hiện nhiều phương tiện cắt qua vạch](output/violation_1.jpg)
 
@@ -90,22 +125,20 @@ Lần chạy thử với video `7.mp4` xử lý 520 frame và ghi nhận 36 lư�
 
 ![Phát hiện phương tiện trong khung hình tiếp theo](output/violation_3.jpg)
 
-> Ba ảnh trên chỉ là output minh họa. Model OCR chưa trả về chuỗi biển số hợp lệ trong lần chạy này; mọi kết quả cần được kiểm tra thủ công.
+## Legacy source
+
+Ba file root `traffic_violation_detection.py`, `license_plate_recognition.py`, `sort.py` chưa bị xóa để bảo toàn chức năng và phục vụ đối chiếu. Chúng không phải entry point khuyến nghị cho tích hợp Backend mới.
+
+`sort.py` mang thông báo GPL-3.0 từ upstream. AI service mới không import/copy implementation này; nó dùng ByteTrack thông qua Ultralytics. Cần review license toàn bộ dependency và model trước khi phân phối thương mại.
 
 ## Bảo mật và quyền riêng tư
 
-Ảnh/video giao thông và biển số xe có thể là dữ liệu cá nhân. Chỉ dùng dữ liệu bạn có quyền xử lý; thông báo và xin phép khi pháp luật yêu cầu. Repo chỉ giữ ba frame minh họa được liệt kê trong README; video gốc, video output, ảnh crop biển số, database và các output khác được bỏ qua bởi `.gitignore`.
+Ảnh/video giao thông và biển số có thể là dữ liệu cá nhân. Chỉ xử lý dữ liệu bạn có quyền sử dụng, áp dụng retention/access policy phù hợp và không commit video, database, model weights hay output thật. `.gitignore` chỉ cho phép ba screenshot README đã chọn.
 
-## GitHub
+## Giới hạn hiện tại
 
-- Quy trình đóng góp và quy tắc nhánh: [CONTRIBUTING.md](CONTRIBUTING.md).
-- Báo cáo lỗ hổng bảo mật: [SECURITY.md](SECURITY.md).
-- Mẫu issue và pull request: `.github/ISSUE_TEMPLATE/` và `.github/PULL_REQUEST_TEMPLATE.md`.
-- Repo hiện chưa khai báo giấy phép tổng thể. `sort.py` có thông báo mã nguồn GPL-3.0; hãy xác minh quyền và nghĩa vụ phân phối của toàn bộ mã/model trước khi chọn giấy phép hoặc public repo. Không mặc định phần còn lại được cấp phép theo GPL.
-
-## Giới hạn
-
-- Vạch kiểm tra được cố định theo tỷ lệ khung hình, không hiệu chỉnh phối cảnh hay theo từng camera.
-- Logic hiện tại không xác thực đèn đỏ, tín hiệu giao thông, tốc độ hoặc danh tính người điều khiển.
-- Độ chính xác phụ thuộc chất lượng video, góc quay, ánh sáng, model biển số và cấu hình phần cứng.
-- Cần kiểm tra thủ công mọi kết quả; không dùng làm bằng chứng xử phạt nếu chưa được kiểm định và phê duyệt phù hợp.
+- Tracking có thể ID-switch khi che khuất hoặc mật độ giao thông cao.
+- Line coordinates phải hiệu chỉnh theo camera.
+- OCR chưa có temporal aggregation/retry trên nhiều frame.
+- Chưa có traffic signal recognition, perspective calibration hay speed estimation.
+- Chưa tích hợp NestJS, PostgreSQL, Redis hoặc Docker trong Phase 01.
