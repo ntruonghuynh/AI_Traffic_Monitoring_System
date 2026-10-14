@@ -30,5 +30,8 @@ violators.csv
 *.pth
 *.onnx
 
-# SORT demo outputs
-output/
+# Generated outputs: only keep selected README screenshots
+output/*
+!output/violation_1.jpg
+!output/violation_2.jpg
+!output/violation_3.jpg

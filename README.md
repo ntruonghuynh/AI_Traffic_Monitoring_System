@@ -80,9 +80,21 @@ python kiemtradulieudatabase.py
 
 Mỗi lần chạy ghi thêm vào `violations.db`, còn `violators.csv` được ghi đè. Sao lưu hoặc đổi tên kết quả cần giữ trước khi chạy lại.
 
+## Kết quả minh họa
+
+Lần chạy thử với video `7.mp4` xử lý 520 frame và ghi nhận 36 lượt phương tiện cắt qua vạch kiểm tra: 17 ô tô, 15 xe máy và 4 xe tải. Các khung màu đỏ thể hiện phương tiện được phát hiện; khung màu xanh và ảnh phóng to thể hiện vùng biển số.
+
+![Phát hiện nhiều phương tiện cắt qua vạch](output/violation_1.jpg)
+
+![Phát hiện ô tô và vùng biển số](output/violation_2.jpg)
+
+![Phát hiện phương tiện trong khung hình tiếp theo](output/violation_3.jpg)
+
+> Ba ảnh trên chỉ là output minh họa. Model OCR chưa trả về chuỗi biển số hợp lệ trong lần chạy này; mọi kết quả cần được kiểm tra thủ công.
+
 ## Bảo mật và quyền riêng tư
 
-Ảnh/video giao thông và biển số xe có thể là dữ liệu cá nhân. Chỉ dùng dữ liệu bạn có quyền xử lý; thông báo và xin phép khi pháp luật yêu cầu; không commit video thật, ảnh biển số, database hay kết quả nhận diện lên repo công khai. Các thư mục dữ liệu/kết quả và video `7.mp4` được bỏ qua bởi `.gitignore`.
+Ảnh/video giao thông và biển số xe có thể là dữ liệu cá nhân. Chỉ dùng dữ liệu bạn có quyền xử lý; thông báo và xin phép khi pháp luật yêu cầu. Repo chỉ giữ ba frame minh họa được liệt kê trong README; video gốc, video output, ảnh crop biển số, database và các output khác được bỏ qua bởi `.gitignore`.
 
 ## GitHub
 
