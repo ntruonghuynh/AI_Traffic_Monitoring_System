@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "traffic-ai-service"
+version = "0.1.0"
+description = "Modular traffic line-crossing candidate detection and license plate OCR service"
+readme = "README.md"
+requires-python = ">=3.10,<3.13"
+dependencies = [
+  "easyocr>=1.7,<2",
+  "lap>=0.5.12,<1",
+  "numpy>=1.24,<3",
+  "opencv-python>=4.8,<5",
+  "PyYAML>=6,<7",
+  "ultralytics>=8.3,<9",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8,<9",
+  "pytest-cov>=5,<7",
+]
+
+[project.scripts]
+traffic-ai = "traffic_ai.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-ra"
+markers = [
+  "integration: requires real model weights and an input video",
+]

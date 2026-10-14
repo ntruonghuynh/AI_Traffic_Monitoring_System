@@ -8,6 +8,13 @@ venv/
 env/
 ENV/
 pip-wheel-metadata/
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
 
 # Editors and operating systems
 .DS_Store
