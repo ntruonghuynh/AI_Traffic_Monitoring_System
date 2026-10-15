@@ -1,0 +1,66 @@
+name: Python AI CI
+
+on:
+  push:
+    paths:
+      - "ai-service/**"
+      - ".github/workflows/python-ai-ci.yml"
+  pull_request:
+    paths:
+      - "ai-service/**"
+      - ".github/workflows/python-ai-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: python-ai-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pytest:
+    name: Pytest trên CPU
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: ai-service
+    env:
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+      CUDA_VISIBLE_DEVICES: ""
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: ai-service/pyproject.toml
+
+      - name: Install project and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Run unit tests and asset-gated integration test
+        run: |
+          mkdir -p test-results
+          python -m pytest \
+            --cov=traffic_ai \
+            --cov-report=term-missing \
+            --cov-report=xml:test-results/coverage.xml \
+            --junitxml=test-results/pytest.xml
+
+      - name: Upload Python test reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: python-ai-test-reports
+          path: ai-service/test-results/
+          if-no-files-found: warn
+          retention-days: 14

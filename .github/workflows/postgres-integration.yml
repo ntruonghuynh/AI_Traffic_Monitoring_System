@@ -1,0 +1,80 @@
+name: PostgreSQL Integration CI
+
+on:
+  push:
+    paths:
+      - "backend/**"
+      - ".github/workflows/postgres-integration.yml"
+  pull_request:
+    paths:
+      - "backend/**"
+      - ".github/workflows/postgres-integration.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: postgres-integration-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  integration:
+    name: Prisma migration và PostgreSQL integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      DATABASE_URL: postgresql://traffic_ci:traffic_ci_password@127.0.0.1:5432/traffic_monitoring_test?schema=public
+      TEST_DATABASE_URL: postgresql://traffic_ci:traffic_ci_password@127.0.0.1:5432/traffic_monitoring_test?schema=public
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: traffic_ci
+          POSTGRES_PASSWORD: traffic_ci_password
+          POSTGRES_DB: traffic_monitoring_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U traffic_ci -d traffic_monitoring_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npm run db:generate
+
+      - name: Apply versioned migrations
+        run: npm run db:migrate:deploy
+
+      - name: Run PostgreSQL integration tests
+        run: |
+          mkdir -p test-results
+          npm run test:integration -- --json --outputFile=test-results/integration.json
+
+      - name: Upload integration test report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: postgres-integration-report
+          path: backend/test-results/
+          if-no-files-found: warn
+          retention-days: 14

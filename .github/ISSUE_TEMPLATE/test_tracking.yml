@@ -1,0 +1,66 @@
+name: Theo dõi kiểm thử
+description: Theo dõi phạm vi, tiêu chí chấp nhận và kết quả của một đợt kiểm thử.
+title: "[Test]: "
+labels:
+  - testing
+body:
+  - type: dropdown
+    id: phase
+    attributes:
+      label: Phase
+      options:
+        - Phase 01 — Python AI Service
+        - Phase 02 — Backend + PostgreSQL
+        - Cross-phase integration
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Phạm vi kiểm thử
+      description: Nêu module, loại test và các phần ngoài phạm vi.
+    validations:
+      required: true
+  - type: textarea
+    id: test_cases
+    attributes:
+      label: Test cases
+      description: Liệt kê các Test Case ID ổn định.
+      placeholder: |
+        - DB-001
+        - API-CAM-001
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Tiêu chí chấp nhận
+      description: Mô tả điều kiện có thể kiểm chứng để kết thúc đợt test.
+    validations:
+      required: true
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: Môi trường test được cô lập và không trỏ đến production.
+        - label: Dữ liệu test không chứa thông tin cá nhân thật.
+        - label: Test bắt buộc đã chạy hoặc blocker đã được ghi rõ.
+        - label: Evidence đã được làm sạch dữ liệu nhạy cảm.
+  - type: dropdown
+    id: result
+    attributes:
+      label: Kết quả tổng hợp
+      options:
+        - NOT_RUN
+        - PASS
+        - FAIL
+        - BLOCKED
+        - SKIPPED
+    validations:
+      required: true
+  - type: textarea
+    id: evidence_links
+    attributes:
+      label: Evidence links
+      description: Liên kết GitHub Actions artifact, log đã làm sạch hoặc đường dẫn trong docs/testing/evidence.

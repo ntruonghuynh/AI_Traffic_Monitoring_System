@@ -15,6 +15,7 @@ dist/
 .coverage
 .coverage.*
 htmlcov/
+test-results/
 /storage/*
 !/storage/.gitkeep
 
