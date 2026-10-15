@@ -1,0 +1,150 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum CameraSourceType {
+  FILE_UPLOAD
+  RTSP_METADATA
+  OTHER
+}
+
+enum CameraStatus {
+  ACTIVE
+  INACTIVE
+  MAINTENANCE
+}
+
+enum ProcessingJobStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum DetectionEventType {
+  LINE_CROSSING_CANDIDATE
+}
+
+enum ReviewStatus {
+  PENDING_REVIEW
+  VERIFIED_CROSSING
+  REJECTED_CANDIDATE
+}
+
+enum EvidenceAssetType {
+  IMAGE
+  ANNOTATED_VIDEO
+  OTHER
+}
+
+model Camera {
+  id            String           @id @default(uuid()) @db.Uuid
+  name          String           @db.VarChar(120)
+  location      String           @db.VarChar(255)
+  description   String?          @db.Text
+  sourceType    CameraSourceType @default(FILE_UPLOAD)
+  status        CameraStatus     @default(ACTIVE)
+  configuration Json?
+  createdAt     DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime         @updatedAt @db.Timestamptz(3)
+  videos        Video[]
+
+  @@index([status])
+  @@index([createdAt])
+}
+
+model Video {
+  id               String          @id @default(uuid()) @db.Uuid
+  cameraId         String?         @db.Uuid
+  originalFilename String          @db.VarChar(255)
+  storageKey       String          @unique @db.VarChar(500)
+  mimeType         String          @db.VarChar(100)
+  fileSize         BigInt
+  durationSeconds  Float?
+  width            Int?
+  height           Int?
+  uploadedAt       DateTime        @default(now()) @db.Timestamptz(3)
+  createdAt        DateTime        @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime        @updatedAt @db.Timestamptz(3)
+  camera           Camera?         @relation(fields: [cameraId], references: [id], onDelete: SetNull)
+  processingJobs   ProcessingJob[]
+
+  @@index([cameraId])
+  @@index([uploadedAt])
+}
+
+model ProcessingJob {
+  id               String              @id @default(uuid()) @db.Uuid
+  videoId          String              @db.Uuid
+  status           ProcessingJobStatus @default(PENDING)
+  aiSchemaVersion  String?             @db.VarChar(20)
+  startedAt        DateTime?           @db.Timestamptz(3)
+  completedAt      DateTime?           @db.Timestamptz(3)
+  totalFrames      Int?
+  processedFrames  Int?
+  totalEvents      Int                 @default(0)
+  errorMessage     String?             @db.Text
+  createdAt        DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime            @updatedAt @db.Timestamptz(3)
+  video            Video               @relation(fields: [videoId], references: [id], onDelete: Restrict)
+  events           DetectionEvent[]
+  evidenceAssets   EvidenceAsset[]
+
+  @@index([videoId])
+  @@index([status, createdAt])
+  @@index([createdAt])
+}
+
+model DetectionEvent {
+  id                 String             @id @default(uuid()) @db.Uuid
+  jobId              String             @db.Uuid
+  sourceEventId      String             @db.VarChar(100)
+  trackId            Int?
+  eventType          DetectionEventType
+  reviewStatus       ReviewStatus       @default(PENDING_REVIEW)
+  vehicleType        String?            @db.VarChar(80)
+  confidence         Float?
+  plateNumber        String?            @db.VarChar(40)
+  plateRawText       String?            @db.VarChar(255)
+  plateConfidence    Float?
+  frameIndex         Int?
+  timestampSeconds   Float?
+  crossingDirection  String?            @db.VarChar(80)
+  detectedAt         DateTime?          @db.Timestamptz(3)
+  reviewNote         String?            @db.VarChar(500)
+  reviewedAt         DateTime?          @db.Timestamptz(3)
+  rawPayload         Json
+  createdAt          DateTime           @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime           @updatedAt @db.Timestamptz(3)
+  job                ProcessingJob      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  evidenceAssets     EvidenceAsset[]
+
+  @@unique([jobId, sourceEventId])
+  @@index([jobId, createdAt])
+  @@index([eventType, reviewStatus, createdAt])
+  @@index([vehicleType])
+  @@index([plateNumber])
+  @@index([timestampSeconds])
+}
+
+model EvidenceAsset {
+  id         String            @id @default(uuid()) @db.Uuid
+  jobId      String?           @db.Uuid
+  eventId    String?           @db.Uuid
+  assetType  EvidenceAssetType
+  storageKey String            @unique @db.VarChar(500)
+  mimeType   String?           @db.VarChar(100)
+  createdAt  DateTime          @default(now()) @db.Timestamptz(3)
+  job        ProcessingJob?    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  event      DetectionEvent?   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([jobId])
+  @@index([eventId])
+  @@index([assetType])
+}

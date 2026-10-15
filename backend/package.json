@@ -1,0 +1,74 @@
+{
+  "name": "traffic-monitoring-backend",
+  "version": "0.2.0",
+  "private": true,
+  "description": "NestJS API and PostgreSQL persistence for the Traffic Violation Detection project",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "scripts": {
+    "prebuild": "prisma generate",
+    "build": "nest build",
+    "start": "node dist/main.js",
+    "dev": "nest start --watch",
+    "lint": "eslint \"{src,test,prisma}/**/*.ts\"",
+    "test": "NODE_OPTIONS=--experimental-vm-modules jest --runInBand",
+    "test:cov": "NODE_OPTIONS=--experimental-vm-modules jest --coverage --runInBand",
+    "test:integration": "NODE_OPTIONS=--experimental-vm-modules jest --config test/jest-integration.json --runInBand",
+    "typecheck": "tsc --noEmit",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:migrate:deploy": "prisma migrate deploy",
+    "db:seed": "prisma db seed",
+    "db:validate": "prisma validate",
+    "import:ai": "tsx src/ai-results/import-ai.cli.ts"
+  },
+  "dependencies": {
+    "@nestjs/common": "^12.1.3",
+    "@nestjs/config": "^12.0.1",
+    "@nestjs/core": "^12.1.3",
+    "@nestjs/platform-express": "^12.1.3",
+    "@nestjs/swagger": "^12.0.2",
+    "@prisma/adapter-pg": "^7.10.0",
+    "@prisma/client": "^7.10.0",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.14.2",
+    "dotenv": "^17.2.3",
+    "multer": "^2.0.2",
+    "pg": "^8.16.3",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@nestjs/cli": "^12.0.2",
+    "@nestjs/schematics": "^12.0.1",
+    "@types/express": "^5.0.5",
+    "@types/jest": "^30.0.0",
+    "@types/multer": "^2.0.0",
+    "@types/node": "^24.10.1",
+    "@types/pg": "^8.15.6",
+    "eslint": "^10.0.0",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^17.0.0",
+    "jest": "^30.2.0",
+    "prisma": "^7.10.0",
+    "ts-jest": "^29.4.5",
+    "tsx": "^4.20.6",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.46.4"
+  },
+  "jest": {
+    "moduleFileExtensions": ["js", "json", "ts"],
+    "rootDir": ".",
+    "testRegex": ".*\\.spec\\.ts$",
+    "extensionsToTreatAsEsm": [".ts"],
+    "transform": {
+      "^.+\\.(t|j)s$": ["ts-jest", { "tsconfig": { "module": "ESNext" }, "useESM": true }]
+    },
+    "collectCoverageFrom": ["src/**/*.(t|j)s", "!src/generated/**", "!src/main.ts", "!src/**/*.module.ts"],
+    "coverageDirectory": "coverage",
+    "testEnvironment": "node"
+  }
+}
