@@ -171,12 +171,15 @@ export class AiJobWorkerService implements OnModuleDestroy {
 
     let running: RunningChild | undefined;
     const exitPromise = new Promise<PythonExit>((resolveExit, rejectExit) => {
+      const childEnv = { ...process.env };
+      delete childEnv.DATABASE_URL;
+      delete childEnv.TEST_DATABASE_URL;
       const child = spawn(this.settings.pythonBin, args, {
         cwd: this.settings.serviceRoot,
         shell: false,
         detached: true,
         stdio: ['ignore', 'ignore', 'pipe'],
-        env: { ...process.env },
+        env: childEnv,
       });
       let stderr = '';
       let timedOut = false;

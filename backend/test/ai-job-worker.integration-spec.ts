@@ -25,6 +25,9 @@ const { spawn } = require('node:child_process');
 const arg = (name) => process.argv[process.argv.indexOf(name) + 1];
 const output = arg('--output');
 const jobId = arg('--job-id');
+const observedEnv = Object.fromEntries(['TRAFFIC_AI_VEHICLE_MODEL_PATH', 'TRAFFIC_AI_PLATE_MODEL_PATH', 'DATABASE_URL', 'TEST_DATABASE_URL'].map((key) => [key, Object.hasOwn(process.env, key) ? process.env[key] : null]));
+fs.writeFileSync(path.join(output, 'child-env.json'), JSON.stringify(observedEnv));
+if (process.env.FAKE_AI_CAPTURE_PATH) fs.copyFileSync(path.join(output, 'child-env.json'), process.env.FAKE_AI_CAPTURE_PATH);
 if (process.env.FAKE_AI_MARKER) fs.appendFileSync(process.env.FAKE_AI_MARKER, jobId + '\n');
 if (process.env.FAKE_AI_CHILD_MARKER) {
   const child = spawn(process.execPath, ['-e', "const fs=require('fs');setInterval(()=>fs.appendFileSync(process.argv[1],'x'),40)", process.env.FAKE_AI_CHILD_MARKER], { stdio: 'ignore' });
@@ -53,6 +56,7 @@ const smallJpeg = Buffer.from(
   let testRoot: string;
   let fakePython: string;
   let jpegPath: string;
+  let envCapturePath: string;
   let payloadPath: string;
   let videoId: string | undefined;
   let jobId: string | undefined;
@@ -78,10 +82,11 @@ const smallJpeg = Buffer.from(
     fakePython = join(testRoot, 'fake-python');
     payloadPath = join(testRoot, 'result.json');
     jpegPath = join(testRoot, 'evidence.jpg');
+    envCapturePath = join(testRoot, 'child-env.json');
     await writeFile(fakePython, fakePythonSource);
     await writeFile(jpegPath, smallJpeg);
     await chmod(fakePython, 0o755);
-    for (const key of ['FAKE_AI_PAYLOAD_FILE', 'FAKE_AI_JPEG_FILE', 'FAKE_AI_MARKER', 'FAKE_AI_CHILD_MARKER', 'FAKE_AI_CHILD_PID', 'FAKE_AI_DELAY_MS', 'FAKE_AI_STATUS', 'FAKE_AI_EXIT_CODE', 'FAKE_AI_WRITE_EVIDENCE', 'FAKE_AI_MISSING_EVIDENCE', 'FAKE_AI_NO_JSON']) {
+    for (const key of ['FAKE_AI_PAYLOAD_FILE', 'FAKE_AI_JPEG_FILE', 'FAKE_AI_CAPTURE_PATH', 'FAKE_AI_MARKER', 'FAKE_AI_CHILD_MARKER', 'FAKE_AI_CHILD_PID', 'FAKE_AI_DELAY_MS', 'FAKE_AI_STATUS', 'FAKE_AI_EXIT_CODE', 'FAKE_AI_WRITE_EVIDENCE', 'FAKE_AI_MISSING_EVIDENCE', 'FAKE_AI_NO_JSON', 'TRAFFIC_AI_VEHICLE_MODEL_PATH', 'TRAFFIC_AI_PLATE_MODEL_PATH', 'DATABASE_URL', 'TEST_DATABASE_URL']) {
       originalEnv[key] = process.env[key];
     }
     process.env.FAKE_AI_PAYLOAD_FILE = payloadPath;
@@ -116,7 +121,7 @@ const smallJpeg = Buffer.from(
     if (!prisma) return;
     await writeFile(fakePython, fakePythonSource);
     await chmod(fakePython, 0o755);
-    for (const key of ['FAKE_AI_MARKER', 'FAKE_AI_CHILD_MARKER', 'FAKE_AI_CHILD_PID', 'FAKE_AI_DELAY_MS', 'FAKE_AI_STATUS', 'FAKE_AI_EXIT_CODE', 'FAKE_AI_WRITE_EVIDENCE', 'FAKE_AI_MISSING_EVIDENCE', 'FAKE_AI_NO_JSON']) delete process.env[key];
+    for (const key of ['FAKE_AI_CAPTURE_PATH', 'FAKE_AI_MARKER', 'FAKE_AI_CHILD_MARKER', 'FAKE_AI_CHILD_PID', 'FAKE_AI_DELAY_MS', 'FAKE_AI_STATUS', 'FAKE_AI_EXIT_CODE', 'FAKE_AI_WRITE_EVIDENCE', 'FAKE_AI_MISSING_EVIDENCE', 'FAKE_AI_NO_JSON', 'TRAFFIC_AI_VEHICLE_MODEL_PATH', 'TRAFFIC_AI_PLATE_MODEL_PATH', 'DATABASE_URL', 'TEST_DATABASE_URL']) delete process.env[key];
     const video = await prisma.video.create({
       data: { originalFilename: 'input_video.mp4', storageKey: `videos/${randomUUID()}.mp4`, mimeType: 'video/mp4', fileSize: 1n },
     });
@@ -140,6 +145,7 @@ const smallJpeg = Buffer.from(
     if (process.env.FAKE_AI_MARKER) await rm(process.env.FAKE_AI_MARKER, { force: true });
     if (process.env.FAKE_AI_CHILD_MARKER) await rm(process.env.FAKE_AI_CHILD_MARKER, { force: true });
     if (process.env.FAKE_AI_CHILD_PID) await rm(process.env.FAKE_AI_CHILD_PID, { force: true });
+    if (envCapturePath) await rm(envCapturePath, { force: true });
   });
 
   afterAll(async () => {
@@ -162,6 +168,33 @@ const smallJpeg = Buffer.from(
     expect(assets).toHaveLength(1);
     expect(assets[0]?.assetType).toBe(EvidenceAssetType.IMAGE);
     await expect(readFile(join(storageRoot, assets[0].storageKey))).resolves.toEqual(smallJpeg);
+  });
+
+  it('passes model paths to Python but omits database URLs from its environment', async () => {
+    const modelEnv = {
+      TRAFFIC_AI_VEHICLE_MODEL_PATH: '/fake/absolute/models/vehicle.pt',
+      TRAFFIC_AI_PLATE_MODEL_PATH: '/fake/absolute/models/plate.pt',
+      DATABASE_URL: 'postgresql://test-only:secret@127.0.0.1:5433/should_not_be_inherited',
+      TEST_DATABASE_URL: 'postgresql://test-only:secret@127.0.0.1:5433/traffic_monitoring_test',
+    };
+    const previous = Object.fromEntries(Object.keys(modelEnv).map((key) => [key, process.env[key]]));
+    process.env.FAKE_AI_CAPTURE_PATH = envCapturePath;
+    Object.assign(process.env, modelEnv);
+    try {
+      await expect(worker.claimAndRunOne()).resolves.toBe(true);
+      const observed = JSON.parse(await readFile(envCapturePath, 'utf8')) as Record<string, string | null>;
+      expect(observed).toEqual({
+        TRAFFIC_AI_VEHICLE_MODEL_PATH: modelEnv.TRAFFIC_AI_VEHICLE_MODEL_PATH,
+        TRAFFIC_AI_PLATE_MODEL_PATH: modelEnv.TRAFFIC_AI_PLATE_MODEL_PATH,
+        DATABASE_URL: null,
+        TEST_DATABASE_URL: null,
+      });
+    } finally {
+      for (const [key, value] of Object.entries(previous)) {
+        if (value === undefined) delete process.env[key]; else process.env[key] = value;
+      }
+      delete process.env.FAKE_AI_CAPTURE_PATH;
+    }
   });
 
   it('imports a Python exit 1 FAILED summary and persists its error', async () => {
