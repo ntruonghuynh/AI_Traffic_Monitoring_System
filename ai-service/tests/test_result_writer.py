@@ -4,7 +4,9 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
+import cv2
 import numpy as np
+import pytest
 
 from traffic_ai.config import OutputConfig
 from traffic_ai.schemas import (
@@ -14,7 +16,7 @@ from traffic_ai.schemas import (
     ProcessingSummary,
     VideoMetadata,
 )
-from traffic_ai.storage.result_writer import ResultWriter
+from traffic_ai.storage.result_writer import ResultWriter, ResultWriteError
 
 
 def test_writer_creates_json_evidence_and_optional_legacy_outputs(tmp_path: Path) -> None:
@@ -51,3 +53,27 @@ def test_writer_creates_json_evidence_and_optional_legacy_outputs(tmp_path: Path
     assert rows[0]["event_id"] == "event-1"
     with sqlite3.connect(tmp_path / "violations.db") as connection:
         assert connection.execute("SELECT event_id FROM candidate_events").fetchone()[0] == "event-1"
+
+
+def test_writer_saves_plate_crop_as_high_quality_jpeg_and_rejects_unsafe_event_id(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    writer = ResultWriter(tmp_path, OutputConfig(save_evidence_images=True))
+    image = np.zeros((24, 48, 3), dtype=np.uint8)
+    original_imwrite = cv2.imwrite
+    write_parameters = []
+
+    def capture_imwrite(path, image, parameters):
+        write_parameters.extend(parameters)
+        return original_imwrite(path, image, parameters)
+
+    monkeypatch.setattr("traffic_ai.storage.result_writer.cv2.imwrite", capture_imwrite)
+
+    relative_path = writer.save_plate_crop("event-1", image)
+
+    assert relative_path == "evidence/event-1_plate.jpg"
+    assert (tmp_path / relative_path).is_file()
+    assert write_parameters == [cv2.IMWRITE_JPEG_QUALITY, 95]
+    with pytest.raises(ResultWriteError, match="safe filename"):
+        writer.save_plate_crop("../outside", image)

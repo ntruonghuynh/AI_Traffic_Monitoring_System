@@ -114,8 +114,9 @@ class VideoProcessor:
 
                 frame_events: list[LineCrossingEvent] = []
                 frame_plates: list[PlateDetection] = []
+                frame_plate_crops: dict[str, Any] = {}
                 for transition in transitions:
-                    recognition, plate_detection = self._recognize_plate(frame, transition.vehicle.bbox)
+                    recognition, plate_detection, plate_crop = self._recognize_plate(frame, transition.vehicle.bbox)
                     if plate_detection is not None:
                         frame_plates.append(plate_detection)
                     event = LineCrossingEvent(
@@ -132,6 +133,8 @@ class VideoProcessor:
                     )
                     frame_events.append(event)
                     events.append(event)
+                    if plate_crop is not None:
+                        frame_plate_crops[event.event_id] = plate_crop
 
                 rendered = annotate_frame(
                     frame,
@@ -143,6 +146,9 @@ class VideoProcessor:
                 )
                 for event in frame_events:
                     event.evidence_path = writer.save_evidence(event.event_id, rendered)
+                    plate_crop = frame_plate_crops.get(event.event_id)
+                    if plate_crop is not None:
+                        event.plate_crop_path = writer.save_plate_crop(event.event_id, plate_crop)
                 writer.write_annotated_frame(rendered)
 
                 frame_index += 1
@@ -168,17 +174,32 @@ class VideoProcessor:
         writer.write_result(result)
         return result
 
-    def _recognize_plate(self, frame: Any, vehicle_bbox: Any) -> tuple[PlateRecognition, PlateDetection | None]:
+    def _recognize_plate(
+        self,
+        frame: Any,
+        vehicle_bbox: Any,
+    ) -> tuple[PlateRecognition, PlateDetection | None, Any | None]:
         try:
             candidates = self.plate_detector.detect(frame, vehicle_bbox)
-            if not candidates:
-                return PlateRecognition(), None
-            best_plate = candidates[0]
+        except Exception:
+            LOGGER.warning("Plate detection failed for one candidate event", exc_info=True)
+            return PlateRecognition(), None, None
+        if not candidates:
+            return PlateRecognition(), None, None
+
+        best_plate = max(candidates, key=lambda item: item.detection.confidence)
+        height, width = best_plate.image.shape[:2]
+        crop_for_output = (
+            best_plate.image
+            if min(height, width) >= self.config.plate_detection.min_crop_size
+            else None
+        )
+        try:
             ocr_candidates = self.plate_recognizer.recognize(best_plate.image)
-            return self.plate_validator.select_best(ocr_candidates), best_plate.detection
         except Exception:
             LOGGER.warning("Plate pipeline failed for one candidate event", exc_info=True)
-            return PlateRecognition(), None
+            return PlateRecognition(), best_plate.detection, crop_for_output
+        return self.plate_validator.select_best(ocr_candidates), best_plate.detection, crop_for_output
 
     @staticmethod
     def _read_metadata(capture: Any, input_path: Path) -> VideoMetadata:

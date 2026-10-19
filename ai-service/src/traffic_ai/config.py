@@ -55,6 +55,11 @@ class PlateDetectionConfig:
     confidence: float = 0.3
     iou: float = 0.5
     image_size: int = 640
+    min_crop_size: int = 20
+
+    def __post_init__(self) -> None:
+        if self.min_crop_size < 1:
+            raise ConfigError("plate_detection.min_crop_size must be a positive integer")
 
 
 @dataclass(frozen=True, slots=True)
@@ -195,6 +200,7 @@ def load_config(path: str | Path | None = None) -> ServiceConfig:
             confidence=float(plate.get("confidence", 0.3)),
             iou=float(plate.get("iou", 0.5)),
             image_size=int(plate.get("image_size", 640)),
+            min_crop_size=int(plate.get("min_crop_size", 20)),
         ),
         ocr=OCRConfig(
             languages=tuple(str(item) for item in ocr.get("languages", ("en", "vi"))),

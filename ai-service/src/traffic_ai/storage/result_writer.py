@@ -56,6 +56,19 @@ class ResultWriter:
             raise ResultWriteError(f"Cannot write evidence image: {path}")
         return path.relative_to(self.output_dir).as_posix()
 
+    def save_plate_crop(self, event_id: str, image: Any) -> str | None:
+        if not self.config.save_evidence_images:
+            return None
+        if not event_id or event_id in {".", ".."} or "/" in event_id or "\\" in event_id:
+            raise ResultWriteError("event_id must be a safe filename component")
+        relative_path = Path("evidence") / f"{event_id}_plate.jpg"
+        path = (self.output_dir / relative_path).resolve()
+        if not path.is_relative_to(self.output_dir):
+            raise ResultWriteError("Plate crop path escapes output directory")
+        if not cv2.imwrite(str(path), image, [cv2.IMWRITE_JPEG_QUALITY, 95]):
+            raise ResultWriteError(f"Cannot write plate crop: {path}")
+        return relative_path.as_posix()
+
     def write_result(self, result: ProcessingResult) -> Path:
         destination = self.output_dir / "results.json"
         temporary = destination.with_suffix(".json.tmp")
