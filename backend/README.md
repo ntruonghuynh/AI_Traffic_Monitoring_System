@@ -48,9 +48,26 @@ Swagger: `http://localhost:3000/api/docs`
 | `STORAGE_ROOT` | Root local storage; relative path được resolve từ `backend/` |
 | `MAX_UPLOAD_SIZE` | Byte limit cho multipart upload |
 | `CORS_ORIGIN` | Danh sách origin cách nhau bởi dấu phẩy |
-| `INTERNAL_API_TOKEN` | Token development cho review/evidence content |
+| `INTERNAL_API_TOKEN` | Token nội bộ bắt buộc trên các route ghi được liệt kê bên dưới |
 
 Không commit `.env`. `storage/`, generated Prisma Client, build và coverage đều bị ignore.
+
+### X-Internal-Token
+
+Các route sau yêu cầu header `X-Internal-Token` trong mọi môi trường: `POST /api/v1/cameras`, `PATCH /api/v1/cameras/:id`, `DELETE /api/v1/cameras/:id`, `POST /api/v1/videos/upload`, `DELETE /api/v1/videos/:id`, `POST /api/v1/jobs`, `PATCH /api/v1/events/:id/review` và `GET /api/v1/evidence/:id/content`. Các route GET khác, health và Swagger vẫn công khai.
+
+Tạo token ngẫu nhiên bằng `openssl rand -hex 32`, rồi đặt vào `INTERNAL_API_TOKEN` trong `.env`. Không dùng giá trị mẫu trong production; server từ chối token mẫu ở môi trường đó. Token thật được chấp nhận trong production. Nếu token chưa cấu hình, route được bảo vệ trả 403; request thiếu hoặc sai token trả 401.
+
+```bash
+curl -X POST http://localhost:3000/api/v1/jobs \
+  -H "X-Internal-Token: <token>" \
+  -H 'Content-Type: application/json' \
+  -d '{"videoId":"<video-uuid>"}'
+
+curl -X POST http://localhost:3000/api/v1/videos/upload \
+  -H "X-Internal-Token: <token>" \
+  -F 'file=@/path/to/input.mp4'
+```
 
 ## Scripts
 

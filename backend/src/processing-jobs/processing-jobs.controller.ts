@@ -1,5 +1,6 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query, UseGuards } from '@nestjs/common';
+import { ApiHeader, ApiOperation, ApiSecurity, ApiTags } from '@nestjs/swagger';
+import { InternalTokenGuard } from '../common/guards/internal-token.guard';
 import { CreateJobDto } from './dto/create-job.dto';
 import { JobQueryDto } from './dto/job-query.dto';
 import { ProcessingJobsService } from './processing-jobs.service';
@@ -10,6 +11,9 @@ export class ProcessingJobsController {
   constructor(private readonly jobs: ProcessingJobsService) {}
 
   @Post()
+  @UseGuards(InternalTokenGuard)
+  @ApiHeader({ name: 'X-Internal-Token', required: true })
+  @ApiSecurity('internal-token')
   @ApiOperation({ summary: 'Tạo job PENDING; không tự chạy Python trong Phase 02' })
   create(@Body() dto: CreateJobDto) {
     return this.jobs.create(dto);

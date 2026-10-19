@@ -9,6 +9,7 @@ import {
 } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { LocalStorageService } from '../storage/local-storage.service';
+import { safeError } from '../common/utils/safe-error';
 import { assertJobTransition } from '../processing-jobs/job-state';
 import { AiEventDto, AiProcessingStatus } from './dto/ai-result.dto';
 import { validateAiResult } from './ai-result.validator';
@@ -134,7 +135,7 @@ export class AiResultImportService {
             totalFrames: result.summary.input_video.reported_total_frames,
             processedFrames: result.summary.processed_frames,
             totalEvents: result.events.length,
-            errorMessage: result.summary.error,
+            errorMessage: result.summary.error ? safeError(result.summary.error) : null,
           },
           include: { _count: { select: { events: true } } },
         });

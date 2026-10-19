@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Query, UseGuards } from '@nestjs/common';
-import { ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiHeader, ApiOperation, ApiSecurity, ApiTags } from '@nestjs/swagger';
 import { InternalTokenGuard } from '../common/guards/internal-token.guard';
 import { DetectionEventsService } from './detection-events.service';
 import { EventQueryDto } from './dto/event-query.dto';
@@ -28,7 +28,8 @@ export class DetectionEventsController {
   @Patch(':id/review')
   @UseGuards(InternalTokenGuard)
   @ApiHeader({ name: 'X-Internal-Token', required: true })
-  @ApiOperation({ summary: 'Review nội bộ cho development; bị vô hiệu trong production' })
+  @ApiSecurity('internal-token')
+  @ApiOperation({ summary: 'Review sự kiện; cần X-Internal-Token' })
   review(@Param('id', new ParseUUIDPipe()) id: string, @Body() dto: ReviewEventDto) {
     return this.events.review(id, dto);
   }

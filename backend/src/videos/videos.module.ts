@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { MulterModule } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
+import { InternalTokenGuard } from '../common/guards/internal-token.guard';
 import { VideosController } from './videos.controller';
 import { VideosService } from './videos.service';
 
@@ -21,7 +22,7 @@ import { VideosService } from './videos.service';
     }),
   ],
   controllers: [VideosController],
-  providers: [VideosService],
+  providers: [VideosService, InternalTokenGuard],
   exports: [VideosService],
 })
 export class VideosModule {}

@@ -11,7 +11,7 @@ import {
   ProcessingJobStatus,
 } from '../src/generated/prisma/client';
 import { AiResultImportService } from '../src/ai-results/ai-result-import.service';
-import { AiProcessingResultDto } from '../src/ai-results/dto/ai-result.dto';
+import { AiProcessingResultDto, AiProcessingStatus } from '../src/ai-results/dto/ai-result.dto';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { LocalStorageService } from '../src/storage/local-storage.service';
 import { makeAiResult } from './fixtures/ai-result.fixture';
@@ -207,6 +207,20 @@ const smallJpeg = Buffer.from(
     await expect(importer.import(missingJobId, payload, resultRoot)).rejects.toThrow('Không tìm thấy processing job');
     expect(await prisma.processingJob.findUnique({ where: { id: missingJobId } })).toBeNull();
     expect(await prisma.detectionEvent.count({ where: { jobId: missingJobId } })).toBe(0);
+  });
+
+  it('redacts absolute paths from a FAILED summary error before persisting it', async () => {
+    const job = requireJobId();
+    const { payload } = createResult(job, null);
+    payload.summary.status = AiProcessingStatus.Failed;
+    payload.summary.error = 'Could not read "/private/fixture folder/video.mp4"';
+
+    await importer.import(job, payload, resultRoot);
+
+    const persistedJob = await prisma.processingJob.findUniqueOrThrow({ where: { id: job } });
+    expect(persistedJob.status).toBe(ProcessingJobStatus.FAILED);
+    expect(persistedJob.errorMessage).toBe('Could not read [path]');
+    expect(persistedJob.errorMessage).not.toContain('/private/fixture folder/video.mp4');
   });
 
   function requireJobId(): string {
