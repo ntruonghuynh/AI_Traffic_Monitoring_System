@@ -51,7 +51,7 @@ PENDING -> PROCESSING -> COMPLETED
 
 ### EvidenceAsset
 
-Chỉ lưu metadata và `storageKey`. Event evidence là `IMAGE`; annotated video là artifact cấp job. SQL migration bảo đảm mỗi asset không thể đồng thời thuộc job và event.
+Chỉ lưu metadata và `storageKey`. Evidence toàn cảnh của event là `IMAGE`; ảnh crop biển số là `PLATE_CROP`; annotated video là artifact cấp job. Migration thêm `PLATE_CROP` vào enum `EvidenceAssetType`. SQL migration bảo đảm mỗi asset không thể đồng thời thuộc job và event.
 
 ## Index và constraint
 

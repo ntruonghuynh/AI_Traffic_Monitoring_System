@@ -1,0 +1,1 @@
+ALTER TYPE "EvidenceAssetType" ADD VALUE 'PLATE_CROP';

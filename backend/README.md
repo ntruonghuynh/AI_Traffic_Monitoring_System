@@ -137,6 +137,7 @@ Các khóa ngoại: `Video.cameraId` → `Camera.id` (xóa camera thì đặt nu
 | `events[].event_type`, `status` | `DetectionEvent.eventType`, `reviewStatus` | Backend đặt `LINE_CROSSING_CANDIDATE` và `PENDING_REVIEW` sau khi validate giá trị nguồn. |
 | Toàn bộ event | `DetectionEvent.rawPayload` | Lưu payload event JSON gốc. |
 | `events[].evidence_path` | `EvidenceAsset.storageKey` | File được copy thành `evidence/<jobId>/<eventId>.<ext>` dưới `STORAGE_ROOT`; asset ảnh gắn với event. `storageKey` là unique. |
+| `events[].plate_crop_path` (schema `1.1`, tùy chọn) | `EvidenceAsset.storageKey`, `EvidenceAsset.assetType=PLATE_CROP` | File được copy thành `evidence/<jobId>/<eventId>-plate.<ext>`; asset gắn với event. Chỉ nhận `.jpg`, `.jpeg`, `.png`; schema `1.0` không được có field này. |
 | `summary.artifacts.annotated_video` | `EvidenceAsset.storageKey` | Nếu có file MP4 hợp lệ, lưu thành `evidence/<jobId>/annotated-video.mp4`; đây là asset cấp job, không gắn event. |
 
 Python là hộp đen đối với backend: backend kiểm tra schema rồi lưu candidate mà Python đưa về; không lưu dữ liệu từng frame. `annotated_video` là tùy chọn. Biển số được lưu đúng như Python trả về, kể cả null. Idempotency dùng `(jobId, sourceEventId)` cho event và `storageKey` cho asset. `PATCH /api/v1/events/:id/review` chỉ ghi nhận review; `VERIFIED_CROSSING` không tự xác nhận vi phạm đèn đỏ hợp pháp.
@@ -230,7 +231,7 @@ npm run import:ai -- \
   --result-root /path/to/result-dir
 ```
 
-Importer hỗ trợ schema `1.0`, validate toàn bộ payload trước mutation, dùng transaction, upsert theo `(jobId, sourceEventId)` và copy evidence vào storage boundary. OCR nullable được giữ nguyên. `LINE_CROSSING_CANDIDATE` không được đổi thành kết luận vi phạm đèn đỏ.
+Importer hỗ trợ schema `1.0` và `1.1`, validate toàn bộ payload trước mutation, dùng transaction, upsert theo `(jobId, sourceEventId)` và copy evidence vào storage boundary. Schema `1.1` có thể kèm `plate_crop_path`; asset được lưu với loại `PLATE_CROP`. OCR nullable được giữ nguyên. `LINE_CROSSING_CANDIDATE` không được đổi thành kết luận vi phạm đèn đỏ.
 
 ## Cấu trúc
 

@@ -40,6 +40,7 @@ const smallJpeg = Buffer.from(
     resultRoot = await mkdtemp(join(tmpdir(), 'ai-import-results-'));
     await mkdir(join(resultRoot, 'evidence'), { recursive: true });
     await writeFile(join(resultRoot, 'evidence', 'event.jpg'), smallJpeg);
+    await writeFile(join(resultRoot, 'evidence', 'plate.jpg'), smallJpeg);
 
     moduleRef = await Test.createTestingModule({
       providers: [
@@ -170,6 +171,45 @@ const smallJpeg = Buffer.from(
     expect(assets).toHaveLength(1);
     expect(assets[0]?.id).toBe(firstAsset.id);
     expect(files).toEqual([`${eventId}.jpg`]);
+  });
+
+  it('imports scene evidence and PLATE_CROP, then re-imports without duplicate rows or files', async () => {
+    const job = requireJobId();
+    const { payload, eventId } = createResult(job, 'evidence/event.jpg');
+    payload.schema_version = '1.1';
+    payload.summary.schema_version = '1.1';
+    payload.events[0].schema_version = '1.1';
+    payload.events[0].plate_crop_path = 'evidence/plate.jpg';
+
+    await importer.import(job, payload, resultRoot);
+    const event = await prisma.detectionEvent.findUniqueOrThrow({
+      where: { jobId_sourceEventId: { jobId: job, sourceEventId: eventId } },
+    });
+    const firstAssets = await prisma.evidenceAsset.findMany({ where: { eventId: event.id }, orderBy: { storageKey: 'asc' } });
+    expect(firstAssets).toHaveLength(2);
+    expect(firstAssets).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        assetType: EvidenceAssetType.IMAGE,
+        storageKey: `evidence/${job}/${eventId}.jpg`,
+        mimeType: 'image/jpeg',
+      }),
+      expect.objectContaining({
+        assetType: EvidenceAssetType.PLATE_CROP,
+        storageKey: `evidence/${job}/${eventId}-plate.jpg`,
+        mimeType: 'image/jpeg',
+      }),
+    ]));
+    await expect(readFile(join(storageRoot, `evidence/${job}/${eventId}.jpg`))).resolves.toEqual(smallJpeg);
+    await expect(readFile(join(storageRoot, `evidence/${job}/${eventId}-plate.jpg`))).resolves.toEqual(smallJpeg);
+
+    await importer.import(job, payload, resultRoot);
+
+    const assets = await prisma.evidenceAsset.findMany({ where: { eventId: event.id }, orderBy: { storageKey: 'asc' } });
+    expect(assets).toHaveLength(2);
+    expect(assets.map((asset) => asset.id)).toEqual(firstAssets.map((asset) => asset.id));
+    expect((await readdir(join(storageRoot, 'evidence', job))).sort()).toEqual([
+      `${eventId}-plate.jpg`, `${eventId}.jpg`,
+    ]);
   });
 
   it('rejects a mismatched summary job_id without changing the job or events', async () => {

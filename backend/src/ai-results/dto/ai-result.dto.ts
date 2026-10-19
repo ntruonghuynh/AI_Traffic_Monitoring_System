@@ -8,6 +8,7 @@ import {
   IsNumber,
   IsString,
   IsUUID,
+  IsOptional,
   Max,
   MaxLength,
   Min,
@@ -15,7 +16,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 
-export const SUPPORTED_AI_SCHEMA_VERSION = '1.0';
+export const SUPPORTED_AI_SCHEMA_VERSIONS = ['1.0', '1.1'] as const;
 
 export enum AiProcessingStatus {
   Running = 'RUNNING',
@@ -107,7 +108,7 @@ export class AiSummaryDto {
   @Type(() => AiArtifactsDto)
   artifacts!: AiArtifactsDto;
 
-  @IsIn([SUPPORTED_AI_SCHEMA_VERSION])
+  @IsIn(SUPPORTED_AI_SCHEMA_VERSIONS)
   schema_version!: string;
 }
 
@@ -167,7 +168,12 @@ export class AiEventDto {
   @MaxLength(500)
   evidence_path!: string | null;
 
-  @IsIn([SUPPORTED_AI_SCHEMA_VERSION])
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  plate_crop_path?: string | null;
+
+  @IsIn(SUPPORTED_AI_SCHEMA_VERSIONS)
   schema_version!: string;
 }
 
@@ -181,6 +187,6 @@ export class AiProcessingResultDto {
   @Type(() => AiEventDto)
   events!: AiEventDto[];
 
-  @IsIn([SUPPORTED_AI_SCHEMA_VERSION])
+  @IsIn(SUPPORTED_AI_SCHEMA_VERSIONS)
   schema_version!: string;
 }
