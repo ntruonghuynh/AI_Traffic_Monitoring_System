@@ -6,6 +6,7 @@ vehicle_detection:
   confidence: 0.30
   iou: 0.50
   image_size: 640
+  min_crop_size: 20
   target_classes:
     - car
     - motorcycle

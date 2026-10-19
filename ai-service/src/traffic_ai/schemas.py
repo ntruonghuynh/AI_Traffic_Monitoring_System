@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 
-SCHEMA_VERSION = "1.0"
+SCHEMA_VERSION = "1.1"
 
 
 class EventType(str, Enum):
@@ -164,6 +164,7 @@ class LineCrossingEvent(JsonSerializable):
     plate_raw_text: str | None = None
     plate_confidence: float | None = None
     evidence_path: str | None = None
+    plate_crop_path: str | None = None
     schema_version: str = SCHEMA_VERSION
 
 
