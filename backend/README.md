@@ -69,6 +69,61 @@ npm run db:migrate:deploy
 npm run db:seed
 ```
 
+## Luồng dữ liệu
+
+```mermaid
+flowchart LR
+  U[Video đầu vào] --> V[POST /api/v1/videos/upload<br/>Video + file trong STORAGE_ROOT]
+  V --> J[POST /api/v1/jobs<br/>ProcessingJob: PENDING]
+  J --> W[Worker claim nguyên tử<br/>PROCESSING]
+  W --> P[Python AI service<br/>detect xe + ByteTrack]
+  P --> C[Line crossing candidate]
+  C --> L[Detect biển số + EasyOCR<br/>+ validation]
+  L --> R[results.json + evidence]
+  R --> I[Importer validate + copy artifacts]
+  I --> T[DB transaction Serializable]
+  T --> E[DetectionEvent + EvidenceAsset]
+  T --> F[ProcessingJob: COMPLETED hoặc FAILED]
+  E --> A[API đọc jobs/events/evidence]
+  F --> A
+```
+
+| Bước | Thành phần | File nguồn | Bảng/cột chính |
+|---|---|---|---|
+| Camera tùy chọn | Backend: `POST /api/v1/cameras` | `src/cameras/cameras.controller.ts`, `src/cameras/cameras.service.ts` | `Camera.id`, `name`, `location`, `status`; `Video.cameraId` tham chiếu `Camera.id`. |
+| Upload video | Backend: `POST /api/v1/videos/upload`; ghi file vào local storage rồi tạo metadata | `src/videos/videos.controller.ts`, `src/videos/videos.service.ts`, `src/storage/local-storage.service.ts` | `Video.originalFilename`, `storageKey`, `mimeType`, `fileSize`, `cameraId`; `storageKey` unique. |
+| Tạo job | Backend: `POST /api/v1/jobs` tạo trạng thái `PENDING` | `src/processing-jobs/processing-jobs.controller.ts`, `src/processing-jobs/processing-jobs.service.ts` | `ProcessingJob.videoId`, `status`, `createdAt`. |
+| Claim và lấy video | Worker đổi job `PENDING` sang `PROCESSING`, rồi dùng `ProcessingJob.videoId` để lấy `Video.storageKey` | `src/worker/ai-job-worker.service.ts` | `ProcessingJob.status`, `startedAt`; video được đọc từ storage, không lấy đường dẫn từ request. Claim dùng `FOR UPDATE SKIP LOCKED`. |
+| Phân tích video | Python detect xe, track bằng ByteTrack; chỉ tạo candidate khi track qua vạch; thử nhận diện biển số ở frame candidate | `ai-service/src/traffic_ai/processing/video_processor.py`, `detection/vehicle_detector.py`, `tracking/vehicle_tracker.py`, `violation/line_crossing.py`, `ocr/plate_detector.py`, `ocr/plate_recognizer.py`, `ocr/plate_validator.py` | Python không ghi từng frame thành bản ghi DB. |
+| Import summary | Backend validate `results.json`, cập nhật metadata video và trạng thái job trong transaction | `src/ai-results/ai-result.validator.ts`, `src/ai-results/ai-result-import.service.ts` | `Video.width`, `height`, `durationSeconds`; `ProcessingJob.aiSchemaVersion`, `startedAt`, `completedAt`, `totalFrames`, `processedFrames`, `totalEvents`, `errorMessage`, `status`. `summary.job_id` phải khớp job đang import. |
+| Import event | Backend upsert candidate theo ID nguồn của Python | `src/ai-results/ai-result-import.service.ts` | `DetectionEvent.sourceEventId`, `trackId`, `eventType`, `reviewStatus`, `vehicleType`, `confidence`, `plateNumber`, `plateRawText`, `plateConfidence`, `frameIndex`, `timestampSeconds`, `crossingDirection`, `rawPayload`. Unique theo `(jobId, sourceEventId)`. |
+| Import evidence | Backend copy file vào `STORAGE_ROOT`, rồi upsert asset | `src/ai-results/ai-result-import.service.ts`, `src/storage/local-storage.service.ts` | `EvidenceAsset.assetType`, `storageKey`, `mimeType`, `eventId`, `jobId`; `storageKey` unique; event JPEG/PNG gắn `eventId`, annotated video tùy chọn gắn `jobId`. |
+| Đọc và review | Backend đọc job/event/evidence; review nội bộ cập nhật trạng thái review | `src/processing-jobs/processing-jobs.controller.ts`, `src/detection-events/detection-events.controller.ts`, `src/detection-events/detection-events.service.ts`, `src/evidence/evidence.controller.ts` | `GET /api/v1/jobs/:id/events`, `GET /api/v1/events`, `GET /api/v1/evidence/:id/content`; `PATCH /api/v1/events/:id/review` cập nhật `reviewStatus`, `reviewNote`, `reviewedAt`. Review chỉ nhận `VERIFIED_CROSSING` hoặc `REJECTED_CANDIDATE` (không nhận `PENDING_REVIEW`). |
+
+Các khóa ngoại: `Video.cameraId` → `Camera.id` (xóa camera thì đặt null); `ProcessingJob.videoId` → `Video.id` (không xóa video đã có job); `DetectionEvent.jobId` → `ProcessingJob.id`; `EvidenceAsset.jobId` → `ProcessingJob.id`; `EvidenceAsset.eventId` → `DetectionEvent.id`. Quan hệ job/event/evidence dùng xóa dây chuyền. Copy file artifact diễn ra trước transaction; các ghi DB của importer nằm trong transaction `Serializable`.
+
+### Ánh xạ `results.json`
+
+| Trường nguồn | Đích trong database | Ghi chú |
+|---|---|---|
+| `results.schema_version` (bằng `summary.schema_version`) | `ProcessingJob.aiSchemaVersion` | Phiên bản phải được hỗ trợ và nhất quán với schema ở root, summary và từng event. |
+| `summary.status` | `ProcessingJob.status` | `COMPLETED` hoặc `FAILED`. |
+| `summary.started_at`, `finished_at` | `ProcessingJob.startedAt`, `completedAt` | `completedAt` null nếu không có `finished_at`. |
+| `summary.input_video.width`, `height`, `duration_seconds` | `Video.width`, `height`, `durationSeconds` | `input_video.input_path` và `fps` không có cột riêng trong `Video`. |
+| `summary.input_video.reported_total_frames`, `summary.processed_frames` | `ProcessingJob.totalFrames`, `processedFrames` |  |
+| `summary.total_candidate_events` | `ProcessingJob.totalEvents` | Validator yêu cầu bằng số phần tử `events`. |
+| `summary.error` | `ProcessingJob.errorMessage` |  |
+| `events[].event_id` | `DetectionEvent.sourceEventId` | Cùng với `jobId` là khóa idempotency của event. |
+| `events[].track_id`, `vehicle_type`, `confidence` | `DetectionEvent.trackId`, `vehicleType`, `confidence` |  |
+| `events[].plate_number`, `plate_raw_text`, `plate_confidence` | `DetectionEvent.plateNumber`, `plateRawText`, `plateConfidence` | Giữ nguyên giá trị Python trả về, có thể null. |
+| `events[].frame_index`, `timestamp_seconds`, `crossing_direction` | `DetectionEvent.frameIndex`, `timestampSeconds`, `crossingDirection` |  |
+| `events[].event_type`, `status` | `DetectionEvent.eventType`, `reviewStatus` | Backend đặt `LINE_CROSSING_CANDIDATE` và `PENDING_REVIEW` sau khi validate giá trị nguồn. |
+| Toàn bộ event | `DetectionEvent.rawPayload` | Lưu payload event JSON gốc. |
+| `events[].evidence_path` | `EvidenceAsset.storageKey` | File được copy thành `evidence/<jobId>/<eventId>.<ext>` dưới `STORAGE_ROOT`; asset ảnh gắn với event. `storageKey` là unique. |
+| `summary.artifacts.annotated_video` | `EvidenceAsset.storageKey` | Nếu có file MP4 hợp lệ, lưu thành `evidence/<jobId>/annotated-video.mp4`; đây là asset cấp job, không gắn event. |
+
+Python là hộp đen đối với backend: backend kiểm tra schema rồi lưu candidate mà Python đưa về; không lưu dữ liệu từng frame. `annotated_video` là tùy chọn. Biển số được lưu đúng như Python trả về, kể cả null. Idempotency dùng `(jobId, sourceEventId)` cho event và `storageKey` cho asset. `PATCH /api/v1/events/:id/review` chỉ ghi nhận review; `VERIFIED_CROSSING` không tự xác nhận vi phạm đèn đỏ hợp pháp.
+
 ## Chạy AI worker
 
 Worker chạy AI service Python cho các job `PENDING`, rồi import kết quả vào PostgreSQL. Trước khi chạy worker, cần:
