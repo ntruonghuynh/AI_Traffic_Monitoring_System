@@ -1,8 +1,9 @@
 import { BadRequestException } from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
+import { extname } from 'node:path';
 import { assertSafeRelativePath } from '../common/utils/path-security';
-import { AiProcessingResultDto, AiProcessingStatus, SUPPORTED_AI_SCHEMA_VERSION } from './dto/ai-result.dto';
+import { AiProcessingResultDto, AiProcessingStatus } from './dto/ai-result.dto';
 
 export async function validateAiResult(payload: unknown): Promise<AiProcessingResultDto> {
   const instance = plainToInstance(AiProcessingResultDto, payload);
@@ -19,7 +20,7 @@ export async function validateAiResult(payload: unknown): Promise<AiProcessingRe
   if (instance.schema_version !== instance.summary.schema_version) {
     throw new BadRequestException('schema_version không đồng nhất giữa root và summary');
   }
-  if (instance.schema_version !== SUPPORTED_AI_SCHEMA_VERSION) {
+  if (!['1.0', '1.1'].includes(instance.schema_version)) {
     throw new BadRequestException(`Không hỗ trợ AI schema ${instance.schema_version}`);
   }
   if (instance.summary.status === AiProcessingStatus.Running) {
@@ -41,10 +42,20 @@ export async function validateAiResult(payload: unknown): Promise<AiProcessingRe
     throw new BadRequestException('Kết quả FAILED phải mô tả error');
   }
 
+  const sourceEvents = payload && typeof payload === 'object' && 'events' in payload && Array.isArray(payload.events)
+    ? payload.events
+    : [];
   const ids = new Set<string>();
-  for (const event of instance.events) {
+  for (const [index, event] of instance.events.entries()) {
     if (event.schema_version !== instance.schema_version) {
       throw new BadRequestException(`Event ${event.event_id} có schema_version không đồng nhất`);
+    }
+    const sourceEvent: unknown = sourceEvents[index];
+    const hasPlateCropField = sourceEvent !== null
+      && typeof sourceEvent === 'object'
+      && Object.prototype.hasOwnProperty.call(sourceEvent, 'plate_crop_path');
+    if (instance.schema_version === '1.0' && hasPlateCropField) {
+      throw new BadRequestException('plate_crop_path chỉ được phép trong AI schema 1.1');
     }
     if (ids.has(event.event_id)) throw new BadRequestException(`Trùng event_id trong payload: ${event.event_id}`);
     ids.add(event.event_id);
@@ -56,6 +67,12 @@ export async function validateAiResult(payload: unknown): Promise<AiProcessingRe
       throw new BadRequestException(`timestamp_seconds của event ${event.event_id} nằm ngoài video đã xử lý`);
     }
     if (event.evidence_path) assertSafeRelativePath(event.evidence_path);
+    if (event.plate_crop_path !== null && event.plate_crop_path !== undefined) {
+      assertSafeRelativePath(event.plate_crop_path);
+      if (!['.jpg', '.jpeg', '.png'].includes(extname(event.plate_crop_path).toLowerCase())) {
+        throw new BadRequestException(`Plate crop của event ${event.event_id} không phải ảnh được hỗ trợ`);
+      }
+    }
   }
   assertSafeRelativePath(instance.summary.artifacts.result_json);
   if (instance.summary.artifacts.annotated_video) assertSafeRelativePath(instance.summary.artifacts.annotated_video);

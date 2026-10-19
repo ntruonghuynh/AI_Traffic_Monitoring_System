@@ -37,8 +37,15 @@ const payload = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'fake-result
 if (plan.status) payload.summary.status = plan.status;
 if (plan.error !== undefined) payload.summary.error = plan.error;
 if (plan.noEvidence) payload.events[0].evidence_path = null;
+if (plan.includePlateCrop) {
+  payload.schema_version = '1.1';
+  payload.summary.schema_version = '1.1';
+  payload.events[0].schema_version = '1.1';
+  payload.events[0].plate_crop_path = 'evidence/plate.jpg';
+}
 fs.mkdirSync(path.join(output, 'evidence'), { recursive: true });
 if (!plan.noEvidence) fs.copyFileSync(path.join(process.cwd(), 'fake-evidence.jpg'), path.join(output, 'evidence/event.jpg'));
+if (plan.includePlateCrop) fs.copyFileSync(path.join(process.cwd(), 'fake-plate-crop.jpg'), path.join(output, 'evidence/plate.jpg'));
 if (!plan.noJson) fs.writeFileSync(path.join(output, 'results.json'), JSON.stringify(payload));
 process.exit(plan.exitCode ?? 0);
 `;
@@ -76,6 +83,7 @@ const jpegBytes = Buffer.from(
     await writeFile(fakePython, fakePythonSource);
     await chmod(fakePython, 0o755);
     await writeFile(join(fixtureRoot, 'fake-evidence.jpg'), jpegBytes);
+    await writeFile(join(fixtureRoot, 'fake-plate-crop.jpg'), jpegBytes);
     await writeFile(join(fixtureRoot, 'fake-plan.json'), JSON.stringify({}));
 
     token = randomBytes(32).toString('hex');
@@ -157,7 +165,7 @@ const jpegBytes = Buffer.from(
 
   it('uploads video, creates job, runs fake Python, imports results, and serves event evidence', async () => {
     const { videoId, jobId } = await createVideoAndJob();
-    await configureFake({}, jobId);
+    await configureFake({ includePlateCrop: true }, jobId);
 
     await expect(worker.claimAndRunOne()).resolves.toBe(true);
 
@@ -168,13 +176,18 @@ const jpegBytes = Buffer.from(
 
     const eventsResponse = await fetch(`${baseUrl}/api/v1/jobs/${jobId}/events`);
     expect(eventsResponse.status).toBe(200);
-    const events = await eventsResponse.json() as Array<{ id: string; evidenceAssets: Array<{ id: string }> }>;
+    const events = await eventsResponse.json() as Array<{
+      id: string;
+      evidenceAssets: Array<{ id: string; assetType: string; mimeType: string | null }>;
+    }>;
     expect(events).toHaveLength(1);
-    expect(events[0]?.evidenceAssets).toHaveLength(1);
+    expect(events[0]?.evidenceAssets).toHaveLength(2);
     const eventId = events[0].id;
-    const evidenceId = events[0].evidenceAssets[0].id;
+    const plateCrop = events[0].evidenceAssets.find((asset) => asset.assetType === 'PLATE_CROP');
+    expect(plateCrop).toMatchObject({ mimeType: 'image/jpeg' });
+    const evidenceId = plateCrop!.id;
     createdEventIds.push(eventId);
-    createdEvidenceIds.push(evidenceId);
+    createdEvidenceIds.push(...events[0].evidenceAssets.map((asset) => asset.id));
 
     const response = await fetch(`${baseUrl}/api/v1/evidence/${evidenceId}/content`, {
       headers: { 'X-Internal-Token': token },

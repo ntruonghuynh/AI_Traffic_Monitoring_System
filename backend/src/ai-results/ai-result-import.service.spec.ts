@@ -1,6 +1,6 @@
 import { NotFoundException } from '@nestjs/common';
 import { jest } from '@jest/globals';
-import { ProcessingJobStatus } from '../generated/prisma/client';
+import { EvidenceAssetType, ProcessingJobStatus } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { LocalStorageService } from '../storage/local-storage.service';
 import { EVENT_ID, JOB_ID, makeAiResult } from '../../test/fixtures/ai-result.fixture';
@@ -58,6 +58,45 @@ describe('AiResultImportService', () => {
     const service = new AiResultImportService(prisma, storage);
     await expect(service.import(JOB_ID, makeAiResult(), '/trusted/results')).rejects.toThrow('database failed');
     expect(storage.delete).toHaveBeenCalledWith(`evidence/${JOB_ID}/${EVENT_ID}.jpg`);
+  });
+
+  it('copy và upsert plate crop với storage key và asset type riêng', async () => {
+    const { prisma, storage, tx } = createDependencies();
+    const service = new AiResultImportService(prisma, storage);
+    const payload = makeAiResult();
+    payload.schema_version = '1.1';
+    payload.summary.schema_version = '1.1';
+    payload.events[0].schema_version = '1.1';
+    Object.assign(payload.events[0], { plate_crop_path: 'evidence/plate.png' });
+
+    await service.import(JOB_ID, payload, '/trusted/results');
+
+    expect(storage.copyTrustedArtifact).toHaveBeenCalledWith(
+      '/trusted/results', 'evidence/plate.png', `evidence/${JOB_ID}/${EVENT_ID}-plate.png`,
+    );
+    expect(tx.evidenceAsset.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      where: { storageKey: `evidence/${JOB_ID}/${EVENT_ID}-plate.png` },
+      create: expect.objectContaining({
+        eventId: '44444444-4444-4444-8444-444444444444',
+        assetType: EvidenceAssetType.PLATE_CROP,
+        mimeType: 'image/png',
+      }),
+    }));
+  });
+
+  it('cleanup cả ảnh toàn cảnh và plate crop nếu transaction lỗi', async () => {
+    const { prisma, storage } = createDependencies(true);
+    const payload = makeAiResult();
+    payload.schema_version = '1.1';
+    payload.summary.schema_version = '1.1';
+    payload.events[0].schema_version = '1.1';
+    Object.assign(payload.events[0], { plate_crop_path: 'evidence/plate.jpg' });
+    const service = new AiResultImportService(prisma, storage);
+
+    await expect(service.import(JOB_ID, payload, '/trusted/results')).rejects.toThrow('database failed');
+
+    expect(storage.delete).toHaveBeenCalledWith(`evidence/${JOB_ID}/${EVENT_ID}.jpg`);
+    expect(storage.delete).toHaveBeenCalledWith(`evidence/${JOB_ID}/${EVENT_ID}-plate.jpg`);
   });
 
   it('từ chối job không tồn tại', async () => {

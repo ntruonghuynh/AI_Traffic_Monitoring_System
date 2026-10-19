@@ -16,6 +16,8 @@ import { validateAiResult } from './ai-result.validator';
 
 interface CopiedArtifact {
   storageKey: string;
+  mimeType: string;
+  assetType: EvidenceAssetType;
   newlyCopied: boolean;
 }
 
@@ -50,12 +52,15 @@ export class AiResultImportService {
 
     const copied: CopiedArtifact[] = [];
     try {
-      const eventArtifacts = new Map<string, { storageKey: string; mimeType: string }>();
+      const eventArtifacts = new Map<string, CopiedArtifact[]>();
       for (const event of result.events) {
-        if (!event.evidence_path) continue;
-        const artifact = await this.copyEventEvidence(jobId, event, trustedResultRoot);
-        eventArtifacts.set(event.event_id, artifact);
-        copied.push({ storageKey: artifact.storageKey, newlyCopied: artifact.newlyCopied });
+        const artifacts: CopiedArtifact[] = [];
+        if (event.evidence_path) artifacts.push(await this.copyEventEvidence(jobId, event, trustedResultRoot));
+        if (event.plate_crop_path) artifacts.push(await this.copyPlateCrop(jobId, event, trustedResultRoot));
+        if (artifacts.length > 0) {
+          eventArtifacts.set(event.event_id, artifacts);
+          copied.push(...artifacts);
+        }
       }
 
       let annotatedArtifact: { storageKey: string; mimeType: string; newlyCopied: boolean } | null = null;
@@ -70,7 +75,7 @@ export class AiResultImportService {
           storageKey,
         );
         annotatedArtifact = { storageKey, mimeType: 'video/mp4', newlyCopied };
-        copied.push({ storageKey, newlyCopied });
+        copied.push({ storageKey, mimeType: 'video/mp4', assetType: EvidenceAssetType.ANNOTATED_VIDEO, newlyCopied });
       }
 
       return await this.prisma.$transaction(async (tx) => {
@@ -89,17 +94,21 @@ export class AiResultImportService {
             },
             update: data,
           });
-          const artifact = eventArtifacts.get(event.event_id);
-          if (artifact) {
+          for (const artifact of eventArtifacts.get(event.event_id) ?? []) {
             await tx.evidenceAsset.upsert({
               where: { storageKey: artifact.storageKey },
               create: {
                 eventId: storedEvent.id,
-                assetType: EvidenceAssetType.IMAGE,
+                assetType: artifact.assetType,
                 storageKey: artifact.storageKey,
                 mimeType: artifact.mimeType,
               },
-              update: { eventId: storedEvent.id, jobId: null, mimeType: artifact.mimeType },
+              update: {
+                eventId: storedEvent.id,
+                jobId: null,
+                assetType: artifact.assetType,
+                mimeType: artifact.mimeType,
+              },
             });
           }
         }
@@ -174,6 +183,14 @@ export class AiResultImportService {
     }
     const storageKey = `evidence/${jobId}/${event.event_id}${extension}`;
     const newlyCopied = await this.storage.copyTrustedArtifact(sourceRoot, event.evidence_path!, storageKey);
-    return { storageKey, mimeType, newlyCopied };
+    return { storageKey, mimeType, assetType: EvidenceAssetType.IMAGE, newlyCopied };
+  }
+
+  private async copyPlateCrop(jobId: string, event: AiEventDto, sourceRoot: string): Promise<CopiedArtifact> {
+    const extension = extname(event.plate_crop_path!).toLowerCase();
+    const mimeType = extension === '.png' ? 'image/png' : 'image/jpeg';
+    const storageKey = `evidence/${jobId}/${event.event_id}-plate${extension}`;
+    const newlyCopied = await this.storage.copyTrustedArtifact(sourceRoot, event.plate_crop_path!, storageKey);
+    return { storageKey, mimeType, assetType: EvidenceAssetType.PLATE_CROP, newlyCopied };
   }
 }
