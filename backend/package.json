@@ -44,6 +44,7 @@
     "@eslint/js": "^10.0.1",
     "@nestjs/cli": "^12.0.2",
     "@nestjs/schematics": "^12.0.1",
+    "@nestjs/testing": "^12.2.0",
     "@types/express": "^5.0.5",
     "@types/jest": "^30.0.0",
     "@types/multer": "^2.0.0",
@@ -60,14 +61,33 @@
     "typescript-eslint": "^8.46.4"
   },
   "jest": {
-    "moduleFileExtensions": ["js", "json", "ts"],
+    "moduleFileExtensions": [
+      "js",
+      "json",
+      "ts"
+    ],
     "rootDir": ".",
     "testRegex": ".*\\.spec\\.ts$",
-    "extensionsToTreatAsEsm": [".ts"],
+    "extensionsToTreatAsEsm": [
+      ".ts"
+    ],
     "transform": {
-      "^.+\\.(t|j)s$": ["ts-jest", { "tsconfig": { "module": "ESNext" }, "useESM": true }]
+      "^.+\\.(t|j)s$": [
+        "ts-jest",
+        {
+          "tsconfig": {
+            "module": "ESNext"
+          },
+          "useESM": true
+        }
+      ]
     },
-    "collectCoverageFrom": ["src/**/*.(t|j)s", "!src/generated/**", "!src/main.ts", "!src/**/*.module.ts"],
+    "collectCoverageFrom": [
+      "src/**/*.(t|j)s",
+      "!src/generated/**",
+      "!src/main.ts",
+      "!src/**/*.module.ts"
+    ],
     "coverageDirectory": "coverage",
     "testEnvironment": "node"
   }
