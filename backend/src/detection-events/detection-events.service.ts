@@ -10,13 +10,28 @@ export class DetectionEventsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async findAll(query: EventQueryDto) {
+    const plateFilters: Prisma.DetectionEventWhereInput[] = [];
+    if (query.plateNumber) {
+      plateFilters.push({ plateNumber: { contains: query.plateNumber, mode: 'insensitive' } });
+    }
+    if (query.hasPlate !== undefined) {
+      plateFilters.push({ plateNumber: query.hasPlate ? { not: null } : null });
+    }
     const where: Prisma.DetectionEventWhereInput = {
-      jobId: query.jobId,
-      job: query.videoId ? { videoId: query.videoId } : undefined,
+      job: query.videoId || query.cameraId || query.jobId
+        ? {
+            is: {
+              id: query.jobId,
+              videoId: query.videoId,
+              video: query.cameraId ? { is: { cameraId: query.cameraId } } : undefined,
+            },
+          }
+        : undefined,
       eventType: query.eventType,
       reviewStatus: query.reviewStatus,
       vehicleType: query.vehicleType,
-      plateNumber: query.plateNumber ? { contains: query.plateNumber, mode: 'insensitive' } : undefined,
+      AND: plateFilters.length ? plateFilters : undefined,
+      confidence: query.minConfidence === undefined ? undefined : { gte: query.minConfidence },
       createdAt: query.from || query.to ? { gte: query.from ? new Date(query.from) : undefined, lte: query.to ? new Date(query.to) : undefined } : undefined,
       timestampSeconds: query.minTimestampSeconds === undefined ? undefined : { gte: query.minTimestampSeconds },
     };

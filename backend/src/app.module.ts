@@ -9,6 +9,7 @@ import { HealthModule } from './health/health.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ProcessingJobsModule } from './processing-jobs/processing-jobs.module';
 import { StorageModule } from './storage/storage.module';
+import { StatsModule } from './stats/stats.module';
 import { VideosModule } from './videos/videos.module';
 
 @Module({
@@ -27,6 +28,7 @@ import { VideosModule } from './videos/videos.module';
     EvidenceModule,
     AiResultsModule,
     HealthModule,
+    StatsModule,
   ],
 })
 export class AppModule {}
