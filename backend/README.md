@@ -261,7 +261,9 @@ Migration/integration test cần một database test riêng. Không trỏ test v
 TEST_DATABASE_URL='postgresql://.../traffic_monitoring_test' npm run test:integration
 ```
 
-Integration test tự skip nếu thiếu `TEST_DATABASE_URL` và từ chối URL có tên database không kết thúc bằng `_test`.
+Integration test tự skip nếu thiếu `TEST_DATABASE_URL`. `test/helpers/test-database.ts` chỉ cho phép database `traffic_monitoring_test` trên `127.0.0.1`/`localhost`, cổng 5433 (cổng 5432 chỉ khi `CI=true`); guard chạy trước khi tạo Prisma client.
+
+`test/e2e-ai-flow.integration-spec.ts` chạy chuỗi API upload → tạo job → worker được gọi trực tiếp → Python giả → importer → API đọc event/evidence. Suite không cần weights và không khởi động vòng polling worker. Fake Python hỗ trợ các ca exit lỗi và timeout.
 
 ## Giới hạn Phase 02
 

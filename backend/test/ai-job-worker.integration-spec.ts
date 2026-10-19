@@ -15,9 +15,8 @@ import { makeAiResult } from './fixtures/ai-result.fixture';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { LocalStorageService } from '../src/storage/local-storage.service';
 import { AiJobWorkerService } from '../src/worker/ai-job-worker.service';
+import { assertSafeTestDatabaseUrl, runIntegration, testDatabaseUrl } from './helpers/test-database';
 
-const testUrl = process.env.TEST_DATABASE_URL;
-const runIntegration = Boolean(testUrl);
 const fakePythonSource = String.raw`#!/usr/bin/env node
 const fs = require('node:fs');
 const path = require('node:path');
@@ -63,19 +62,9 @@ const smallJpeg = Buffer.from(
   const originalEnv: Record<string, string | undefined> = {};
 
   beforeAll(async () => {
-    if (!testUrl) return;
-    const parsedUrl = new URL(testUrl);
-    const databaseName = parsedUrl.pathname.slice(1);
-    if (!databaseName.endsWith('_test')) throw new Error('TEST_DATABASE_URL phải trỏ tới database có hậu tố _test');
-    const allowedPorts = process.env.CI === 'true' ? ['5432', '5433'] : ['5433'];
-    if (
-      databaseName !== 'traffic_monitoring_test'
-      || !['127.0.0.1', 'localhost'].includes(parsedUrl.hostname)
-      || !allowedPorts.includes(parsedUrl.port)
-    ) {
-      throw new Error(`Integration test chỉ được dùng traffic_monitoring_test trên localhost (cổng ${allowedPorts.join(' hoặc ')})`);
-    }
-    prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: testUrl }) });
+    if (!testDatabaseUrl) return;
+    const safeUrl = assertSafeTestDatabaseUrl(testDatabaseUrl);
+    prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: safeUrl }) });
     await prisma.$connect();
     storageRoot = await mkdtemp(join(tmpdir(), 'ai-worker-storage-'));
     testRoot = await mkdtemp(join(tmpdir(), 'ai-worker-test-'));
