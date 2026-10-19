@@ -11,6 +11,7 @@
     "prebuild": "prisma generate",
     "build": "nest build",
     "start": "node dist/main.js",
+    "worker": "node dist/worker.main.js",
     "dev": "nest start --watch",
     "lint": "eslint \"{src,test,prisma}/**/*.ts\"",
     "test": "NODE_OPTIONS=--experimental-vm-modules jest --runInBand",
