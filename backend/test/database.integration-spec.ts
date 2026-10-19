@@ -9,9 +9,20 @@ const runIntegration = Boolean(testUrl);
 
   beforeAll(() => {
     if (!testUrl) return;
-    const databaseName = new URL(testUrl).pathname.slice(1);
+    const parsedUrl = new URL(testUrl);
+    const databaseName = parsedUrl.pathname.slice(1);
     if (!databaseName.endsWith('_test')) {
       throw new Error('TEST_DATABASE_URL phải trỏ tới database có hậu tố _test');
+    }
+    const allowedPorts = process.env.CI === 'true' ? ['5432', '5433'] : ['5433'];
+    if (
+      databaseName !== 'traffic_monitoring_test'
+      || !['127.0.0.1', 'localhost'].includes(parsedUrl.hostname)
+      || !allowedPorts.includes(parsedUrl.port)
+    ) {
+      throw new Error(
+        `Integration test chỉ được dùng traffic_monitoring_test trên localhost (cổng ${allowedPorts.join(' hoặc ')})`,
+      );
     }
     prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: testUrl }) });
   });
