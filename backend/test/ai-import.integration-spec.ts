@@ -15,9 +15,8 @@ import { AiProcessingResultDto, AiProcessingStatus } from '../src/ai-results/dto
 import { PrismaService } from '../src/prisma/prisma.service';
 import { LocalStorageService } from '../src/storage/local-storage.service';
 import { makeAiResult } from './fixtures/ai-result.fixture';
+import { assertSafeTestDatabaseUrl, runIntegration, testDatabaseUrl } from './helpers/test-database';
 
-const testUrl = process.env.TEST_DATABASE_URL;
-const runIntegration = Boolean(testUrl);
 const smallJpeg = Buffer.from(
   '/9j/4AAQSkZJRgABAQAASABIAAD/4QBMRXhpZgAATU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAAaADAAQAAAABAAAAAQAAAAD/7QA4UGhvdG9zaG9wIDMuMAA4QklNBAQAAAAAAAA4QklNBCUAAAAAABDUHYzZjwCyBOmACZjs+EJ+/8AAEQgAAQABAwEiAAIRAQMRAf/EAB8AAAEFAQEBAQEBAAAAAAAAAAABAgMEBQYHCAkKC//EALUQAAIBAwMCBAMFBQQEAAABfQECAwAEEQUSITFBBhNRYQcicRQygZGhCCNCscEVUtHwJDNicoIJChYXGBkaJSYnKCkqNDU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6g4SFhoeIiYqSk5SVlpeYmZqio6Slpqeoqaqys7S1tre4ubrCw8TFxsfIycrS09TV1tfY2drh4uPk5ebn6Onq8fLz9PX29/j5+v/bAEMAAgICAgICAwICAwUDAwMFBgUFBQUGCAYGBgYGCAoICAgICAgKCgoKCgoKCgwMDAwMDA4ODg4ODw8PDw8PDw8PD//bAEMBAgICBAQEBwQEBxALCQsQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEP/dAAQAAf/aAAwDAQACEQMRAD8A+L6KKK/lM/38P//Z',
   'base64',
@@ -33,24 +32,9 @@ const smallJpeg = Buffer.from(
   let jobId: string | undefined;
 
   beforeAll(async () => {
-    if (!testUrl) return;
-    const parsedUrl = new URL(testUrl);
-    const databaseName = parsedUrl.pathname.slice(1);
-    if (!databaseName.endsWith('_test')) {
-      throw new Error('TEST_DATABASE_URL phải trỏ tới database có hậu tố _test');
-    }
-    const allowedPorts = process.env.CI === 'true' ? ['5432', '5433'] : ['5433'];
-    if (
-      databaseName !== 'traffic_monitoring_test'
-      || !['127.0.0.1', 'localhost'].includes(parsedUrl.hostname)
-      || !allowedPorts.includes(parsedUrl.port)
-    ) {
-      throw new Error(
-        `Integration test chỉ được dùng traffic_monitoring_test trên localhost (cổng ${allowedPorts.join(' hoặc ')})`,
-      );
-    }
-
-    prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: testUrl }) });
+    if (!testDatabaseUrl) return;
+    const safeUrl = assertSafeTestDatabaseUrl(testDatabaseUrl);
+    prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: safeUrl }) });
     await prisma.$connect();
     storageRoot = await mkdtemp(join(tmpdir(), 'ai-import-storage-'));
     resultRoot = await mkdtemp(join(tmpdir(), 'ai-import-results-'));
