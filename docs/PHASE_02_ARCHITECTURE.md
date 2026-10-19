@@ -134,7 +134,18 @@ erDiagram
 
 Global prefix là `/api/v1`; Swagger ở `/api/docs`. DTO bật transform, whitelist và reject field không khai báo.
 
-Import AI chỉ có local CLI, không có HTTP endpoint. `PATCH /events/:id/review` yêu cầu `X-Internal-Token`; nếu token chưa cấu hình hoặc môi trường production thì endpoint từ chối. Đây chỉ là boundary phát triển, không thay thế authentication/RBAC.
+Các route yêu cầu `X-Internal-Token` là `POST /cameras`, `PATCH /cameras/:id`, `DELETE /cameras/:id`, `POST /videos/upload`, `DELETE /videos/:id`, `POST /jobs`, `PATCH /events/:id/review` và `GET /evidence/:id/content`. Token chưa cấu hình trả 403; request thiếu/sai token trả 401. Token mẫu bị từ chối khi `NODE_ENV=production`, còn token thật đúng được chấp nhận ở mọi môi trường. Tạo token bằng `openssl rand -hex 32`; không dùng giá trị mẫu trong production. Các GET khác, health và Swagger vẫn công khai. Import AI chỉ có local CLI, không có HTTP endpoint.
+
+Ví dụ gọi route được bảo vệ:
+
+```bash
+curl -X POST http://localhost:3000/api/v1/jobs \
+  -H "X-Internal-Token: <token>" \
+  -H 'Content-Type: application/json' \
+  -d '{"videoId":"<video-uuid>"}'
+```
+
+Đây là internal-token boundary, không thay thế authentication/RBAC.
 
 Error response có cấu trúc ổn định và không trả stack trace/path nội bộ trong production. Prisma dùng parameterized query. CORS, upload limit và storage root lấy từ environment.
 

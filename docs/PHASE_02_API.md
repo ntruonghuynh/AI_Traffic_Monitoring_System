@@ -22,11 +22,11 @@ Stack trace, credentials và absolute filesystem paths không được trả v�
 
 | Method | Route | Mục đích |
 |---|---|---|
-| POST | `/cameras` | Tạo camera metadata |
+| POST | `/cameras` | Tạo camera metadata; cần `X-Internal-Token` |
 | GET | `/cameras?page=1&limit=20&status=ACTIVE` | Danh sách phân trang |
 | GET | `/cameras/:id` | Chi tiết |
-| PATCH | `/cameras/:id` | Cập nhật metadata |
-| DELETE | `/cameras/:id` | Xóa camera, giữ video và set `cameraId=null` |
+| PATCH | `/cameras/:id` | Cập nhật metadata; cần `X-Internal-Token` |
+| DELETE | `/cameras/:id` | Xóa camera, giữ video và set `cameraId=null`; cần `X-Internal-Token` |
 
 ```json
 {
@@ -44,17 +44,18 @@ Stack trace, credentials và absolute filesystem paths không được trả v�
 
 | Method | Route | Mục đích |
 |---|---|---|
-| POST | `/videos/upload` | Multipart field `file`, optional `cameraId` |
+| POST | `/videos/upload` | Multipart field `file`, optional `cameraId`; cần `X-Internal-Token` |
 | GET | `/videos` | Phân trang, filter `cameraId` |
 | GET | `/videos/:id` | Metadata video |
 | GET | `/videos/:id/jobs` | Job của video |
-| DELETE | `/videos/:id` | Chỉ khi video chưa có job |
+| DELETE | `/videos/:id` | Chỉ khi video chưa có job; cần `X-Internal-Token` |
 
 Format hỗ trợ: `.mp4`, `.mov`, `.avi`, `.mkv`, `.webm`. Backend kiểm tra extension, MIME, signature cơ bản và `MAX_UPLOAD_SIZE`. Tên file nội bộ là UUID; response không lộ storage key.
 
 ```bash
 curl -F "file=@/path/to/input.mp4" \
   -F "cameraId=11111111-1111-4111-8111-111111111111" \
+  -H "X-Internal-Token: <token>" \
   http://localhost:3000/api/v1/videos/upload
 ```
 
@@ -62,7 +63,7 @@ curl -F "file=@/path/to/input.mp4" \
 
 | Method | Route | Mục đích |
 |---|---|---|
-| POST | `/jobs` | Tạo job `PENDING` cho video tồn tại |
+| POST | `/jobs` | Tạo job `PENDING` cho video tồn tại; cần `X-Internal-Token` |
 | GET | `/jobs` | Filter `status`, `videoId`, phân trang |
 | GET | `/jobs/:id` | Chi tiết job |
 | GET | `/jobs/:id/events` | Event thuộc job |
@@ -71,6 +72,13 @@ curl -F "file=@/path/to/input.mp4" \
 {
   "videoId": "<video-uuid>"
 }
+```
+
+```bash
+curl -X POST http://localhost:3000/api/v1/jobs \
+  -H "X-Internal-Token: <token>" \
+  -H 'Content-Type: application/json' \
+  -d '{"videoId":"<video-uuid>"}'
 ```
 
 Tạo job không gọi Python và không giả lập completion. Worker/Redis thuộc phase sau.
@@ -82,21 +90,21 @@ Tạo job không gọi Python và không giả lập completion. Worker/Redis th
 | GET | `/events` | Filter/phân trang/stable sort |
 | GET | `/events/:id` | Chi tiết event + raw payload |
 | GET | `/events/:id/evidence` | Metadata evidence, không lộ path |
-| GET | `/evidence/:id/content` | Nội dung asset, cần internal token ở development |
-| PATCH | `/events/:id/review` | Review nội bộ, cần internal token |
+| GET | `/evidence/:id/content` | Nội dung asset; cần `X-Internal-Token` |
+| PATCH | `/events/:id/review` | Review nội bộ; cần `X-Internal-Token` |
 
 Filter event: `videoId`, `jobId`, `eventType`, `reviewStatus`, `vehicleType`, `plateNumber`, `from`, `to`, `minTimestampSeconds`, `page`, `limit`.
 
-Review development-only:
+Review:
 
 ```bash
 curl -X PATCH http://localhost:3000/api/v1/events/<event-uuid>/review \
+  -H "X-Internal-Token: <token>" \
   -H 'Content-Type: application/json' \
-  -H 'X-Internal-Token: <INTERNAL_API_TOKEN>' \
   -d '{"reviewStatus":"VERIFIED_CROSSING","note":"Đã kiểm tra hình ảnh"}'
 ```
 
-Endpoint mutation/content bị từ chối trong `NODE_ENV=production` cho đến khi có authentication/RBAC. API đọc còn lại cũng chỉ nên bind trong trusted development network ở Phase 02.
+Các route ghi/review/content được liệt kê ở trên yêu cầu token trong mọi môi trường. Tạo token bằng `openssl rand -hex 32` và thay giá trị mẫu trong `.env`; token mẫu bị từ chối trong production, còn token thật hợp lệ được chấp nhận. Các GET khác, health và Swagger vẫn công khai. API đọc còn lại cũng chỉ nên bind trong trusted development network ở Phase 02.
 
 ## Health
 
