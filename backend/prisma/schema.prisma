@@ -39,6 +39,7 @@ enum ReviewStatus {
 
 enum EvidenceAssetType {
   IMAGE
+  PLATE_CROP
   ANNOTATED_VIDEO
   OTHER
 }
