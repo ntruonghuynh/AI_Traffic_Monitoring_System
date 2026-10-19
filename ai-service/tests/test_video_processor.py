@@ -1,3 +1,5 @@
+import json
+from dataclasses import replace
 from pathlib import Path
 
 import cv2
@@ -6,8 +8,9 @@ import pytest
 
 from traffic_ai.config import load_config
 from traffic_ai.processing.video_processor import VideoProcessor
+from traffic_ai.ocr.plate_detector import PlateCrop
 from traffic_ai.ocr.plate_validator import PlateValidator
-from traffic_ai.schemas import BoundingBox, ProcessingStatus, TrackedVehicle, VehicleDetection
+from traffic_ai.schemas import BoundingBox, PlateDetection, ProcessingStatus, TrackedVehicle, VehicleDetection
 
 
 class FakeTracker:
@@ -83,6 +86,87 @@ class NoPlateDetector:
         return []
 
 
+class StaticPlateDetector:
+    def __init__(self, image):
+        self.image = image
+
+    def detect(self, frame, bbox):
+        return [
+            PlateCrop(
+                detection=PlateDetection(BoundingBox(42, 52, 58, 60), 0.95, 0, "license_plate"),
+                image=self.image,
+            )
+        ]
+
+
+class MultiPlateDetector:
+    def __init__(self, low_confidence_image, high_confidence_image):
+        self.low_confidence_image = low_confidence_image
+        self.high_confidence_image = high_confidence_image
+
+    def detect(self, frame, bbox):
+        return [
+            PlateCrop(PlateDetection(BoundingBox(40, 50, 50, 56), 0.4, 0, "license_plate"), self.low_confidence_image),
+            PlateCrop(PlateDetection(BoundingBox(42, 52, 58, 60), 0.95, 0, "license_plate"), self.high_confidence_image),
+        ]
+
+
+class EmptyRecognizer:
+    def __init__(self):
+        self.calls = 0
+
+    def recognize(self, image):
+        self.calls += 1
+        return []
+
+
+class CapturingRecognizer(EmptyRecognizer):
+    def recognize(self, image):
+        self.image = image
+        return super().recognize(image)
+
+
+class RaisingRecognizer:
+    def recognize(self, image):
+        raise RuntimeError("OCR failed")
+
+
+class MultiCrossingTracker:
+    def reset(self):
+        pass
+
+    def update(self, frame, frame_index):
+        bottom_y = (70, 40, 30)[frame_index]
+        return [
+            TrackedVehicle(
+                track_id=track_id,
+                detection=VehicleDetection(
+                    BoundingBox(left, bottom_y - 20, left + 20, bottom_y),
+                    0.9,
+                    2,
+                    "car",
+                ),
+            )
+            for track_id, left in ((4, 20), (5, 60))
+        ]
+
+
+def run_processor(monkeypatch, tmp_path, *, detector, recognizer, tracker=None, config=None):
+    fake_capture = FakeCapture()
+    monkeypatch.setattr("traffic_ai.processing.video_processor.cv2.VideoCapture", lambda _: fake_capture)
+    input_path = tmp_path / "input.mp4"
+    input_path.write_bytes(b"synthetic-placeholder")
+    processor = VideoProcessor(
+        config or load_config("configs/default.yaml"),
+        vehicle_tracker=tracker or CrossingTracker(),  # type: ignore[arg-type]
+        plate_detector=detector,  # type: ignore[arg-type]
+        plate_recognizer=recognizer,  # type: ignore[arg-type]
+        plate_validator=PlateValidator(),
+    )
+    result = processor.process(input_path, tmp_path / "results", job_id="job-test")
+    return result, tmp_path / "results"
+
+
 def test_headless_pipeline_writes_json_and_evidence(monkeypatch, tmp_path: Path) -> None:
     fake_capture = FakeCapture()
     monkeypatch.setattr("traffic_ai.processing.video_processor.cv2.VideoCapture", lambda _: fake_capture)
@@ -103,6 +187,94 @@ def test_headless_pipeline_writes_json_and_evidence(monkeypatch, tmp_path: Path)
     assert result.summary.processed_frames == 3
     assert result.summary.total_candidate_events == 1
     assert result.events[0].plate_number is None
+    assert result.events[0].plate_crop_path is None
     assert (output_path / "results.json").is_file()
     assert (output_path / result.events[0].evidence_path).is_file()
     assert fake_capture.released is True
+
+
+def test_plate_crop_is_written_and_serialized_when_ocr_returns_no_text(monkeypatch, tmp_path: Path) -> None:
+    crop = np.full((24, 48, 3), 80, dtype=np.uint8)
+    recognizer = EmptyRecognizer()
+    result, output_dir = run_processor(
+        monkeypatch,
+        tmp_path,
+        detector=StaticPlateDetector(crop),
+        recognizer=recognizer,
+    )
+
+    event = result.events[0]
+    payload = json.loads((output_dir / "results.json").read_text(encoding="utf-8"))
+    assert result.summary.schema_version == "1.1"
+    assert payload["schema_version"] == "1.1"
+    assert payload["summary"]["schema_version"] == "1.1"
+    assert payload["events"][0]["schema_version"] == "1.1"
+    assert event.plate_number is None
+    assert event.plate_crop_path == f"evidence/{event.event_id}_plate.jpg"
+    assert payload["events"][0]["plate_crop_path"] == event.plate_crop_path
+    assert cv2.imread(str(output_dir / event.plate_crop_path)).shape[:2] == (24, 48)
+    assert recognizer.calls == 1
+
+
+def test_highest_confidence_plate_crop_is_the_same_image_sent_to_ocr(monkeypatch, tmp_path: Path) -> None:
+    low = np.full((24, 48, 3), 20, dtype=np.uint8)
+    high = np.full((24, 48, 3), 220, dtype=np.uint8)
+    recognizer = CapturingRecognizer()
+    result, output_dir = run_processor(
+        monkeypatch,
+        tmp_path,
+        detector=MultiPlateDetector(low, high),
+        recognizer=recognizer,
+    )
+
+    event = result.events[0]
+    stored_crop = cv2.imread(str(output_dir / event.plate_crop_path))
+    assert recognizer.image is high
+    assert float(stored_crop.mean()) > 180
+
+
+def test_plate_crop_is_kept_when_ocr_raises(monkeypatch, tmp_path: Path) -> None:
+    result, output_dir = run_processor(
+        monkeypatch,
+        tmp_path,
+        detector=StaticPlateDetector(np.zeros((24, 48, 3), dtype=np.uint8)),
+        recognizer=RaisingRecognizer(),
+    )
+    event = result.events[0]
+    assert event.plate_number is None
+    assert event.plate_crop_path is not None
+    assert (output_dir / event.plate_crop_path).is_file()
+
+
+def test_too_small_plate_crop_is_not_saved_but_ocr_behavior_is_unchanged(monkeypatch, tmp_path: Path) -> None:
+    recognizer = EmptyRecognizer()
+    config = load_config("configs/default.yaml")
+    config = replace(
+        config,
+        plate_detection=replace(config.plate_detection, min_crop_size=21),
+    )
+    result, output_dir = run_processor(
+        monkeypatch,
+        tmp_path,
+        detector=StaticPlateDetector(np.zeros((20, 48, 3), dtype=np.uint8)),
+        recognizer=recognizer,
+        config=config,
+    )
+    assert result.events[0].plate_crop_path is None
+    assert recognizer.calls == 1
+    assert not list((output_dir / "evidence").glob("*_plate.jpg"))
+
+
+def test_multiple_events_in_one_frame_get_distinct_crop_files(monkeypatch, tmp_path: Path) -> None:
+    crop = np.zeros((24, 48, 3), dtype=np.uint8)
+    result, output_dir = run_processor(
+        monkeypatch,
+        tmp_path,
+        detector=StaticPlateDetector(crop),
+        recognizer=EmptyRecognizer(),
+        tracker=MultiCrossingTracker(),
+    )
+    assert len(result.events) == 2
+    paths = [event.plate_crop_path for event in result.events]
+    assert len(set(paths)) == 2
+    assert all(path is not None and (output_dir / path).is_file() for path in paths)
