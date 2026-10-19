@@ -15,6 +15,9 @@ dist/
 .coverage
 .coverage.*
 htmlcov/
+test-results/
+/storage/*
+!/storage/.gitkeep
 
 # Editors and operating systems
 .DS_Store

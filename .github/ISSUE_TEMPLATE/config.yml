@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Hướng dẫn quản lý kiểm thử
+    url: https://github.com/ntruonghuynh/Traffic_violate_detection/blob/backend/docs/testing/README.md
+    about: Đọc quy ước Test Case ID, trạng thái và evidence trước khi tạo issue.

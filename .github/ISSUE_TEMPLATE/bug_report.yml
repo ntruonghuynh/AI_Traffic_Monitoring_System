@@ -1,0 +1,79 @@
+name: Báo lỗi
+description: Báo cáo lỗi có thể tái hiện trong AI service, Backend hoặc quy trình kiểm thử.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Không đăng credentials, token, dữ liệu biển số thật hoặc hình ảnh/video riêng tư.
+  - type: textarea
+    id: description
+    attributes:
+      label: Mô tả
+      description: Mô tả ngắn gọn lỗi và ảnh hưởng.
+      placeholder: Chức năng nào sai và ảnh hưởng đến ai?
+    validations:
+      required: true
+  - type: input
+    id: test_case_id
+    attributes:
+      label: Test Case ID liên quan
+      description: Ví dụ DB-001, API-VID-001 hoặc AI-IMP-001.
+      placeholder: API-JOB-002
+  - type: textarea
+    id: environment
+    attributes:
+      label: Môi trường
+      description: Ghi OS, commit/branch, Node/Python/PostgreSQL và trình duyệt nếu có.
+      placeholder: macOS; branch backend; commit SHA; Node 24; PostgreSQL 18
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Các bước tái hiện
+      placeholder: |
+        1. Chuẩn bị dữ liệu giả lập...
+        2. Chạy lệnh hoặc gọi endpoint...
+        3. Quan sát kết quả...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Kết quả mong đợi
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Kết quả thực tế
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Logs hoặc screenshots
+      description: Dán log đã loại bỏ bí mật hoặc liên kết evidence an toàn; không tải dữ liệu nhạy cảm.
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Mức độ nghiêm trọng
+      options:
+        - Critical
+        - High
+        - Medium
+        - Low
+    validations:
+      required: true
+  - type: checkboxes
+    id: confirmation
+    attributes:
+      label: Xác nhận
+      options:
+        - label: Tôi đã loại bỏ credentials, token và dữ liệu cá nhân khỏi báo cáo.
+          required: true
+        - label: Tôi đã kiểm tra để tránh tạo issue trùng lặp.
+          required: true

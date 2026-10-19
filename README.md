@@ -1,6 +1,6 @@
 # Traffic Violation Detection System
 
-Dự án thử nghiệm Computer Vision phát hiện phương tiện, theo dõi chuyển động, ghi nhận candidate cắt qua vạch và nhận diện biển số. Phase 01 đã tách AI core thành service Python modular để tích hợp Backend/queue/database trong các phase sau.
+Dự án thử nghiệm Computer Vision phát hiện phương tiện, theo dõi chuyển động, ghi nhận candidate cắt qua vạch và nhận diện biển số. Phase 01 đã tách AI core Python modular; Phase 02 bổ sung NestJS Backend, PostgreSQL và Prisma để quản lý video/job/event/evidence.
 
 > **Lưu ý:** Hệ thống hiện chưa đọc trạng thái đèn giao thông. Crossing event chỉ là `LINE_CROSSING_CANDIDATE`, không phải xác nhận vi phạm pháp lý. Mọi kết quả phải được người có thẩm quyền kiểm tra.
 
@@ -23,6 +23,25 @@ Tài liệu kỹ thuật:
 - [Audit kiến trúc cũ và quyết định refactor](docs/PHASE_01_AUDIT.md)
 - [Hướng dẫn AI service](ai-service/README.md)
 - [Tổng kết Phase 01](docs/PHASE_01_SUMMARY.md)
+
+## Phase 02 — Backend + PostgreSQL
+
+Backend mới nằm trong [`backend/`](backend/README.md):
+
+- NestJS 12 + TypeScript, REST API `/api/v1` và Swagger `/api/docs`.
+- PostgreSQL + Prisma ORM 7 với migration version control.
+- Camera/video/job/event/evidence modules theo Controller → Service → Prisma.
+- Multipart upload có format/size/signature validation và local storage abstraction.
+- Trusted CLI import JSON AI schema `1.0`, transaction + idempotent upsert.
+- `LINE_CROSSING_CANDIDATE` giữ nguyên semantics; review crossing không được gọi là kết luận vi phạm đèn đỏ.
+- Health liveness/readiness, global DTO validation và error response nhất quán.
+
+Tài liệu:
+
+- [Kiến trúc Phase 02](docs/PHASE_02_ARCHITECTURE.md)
+- [Thiết kế database](docs/PHASE_02_DATABASE.md)
+- [REST API và AI import](docs/PHASE_02_API.md)
+- [Tổng kết Phase 02](docs/PHASE_02_SUMMARY.md)
 
 ## Kiến trúc
 
@@ -48,6 +67,10 @@ results.json + evidence images + optional annotated video
 │   ├── src/traffic_ai/
 │   ├── tests/
 │   └── pyproject.toml
+├── backend/                        # NestJS + Prisma + local storage abstraction
+│   ├── prisma/
+│   ├── src/
+│   └── test/
 ├── docs/
 ├── traffic_violation_detection.py  # legacy entry point, được giữ lại
 ├── license_plate_recognition.py     # legacy OCR pipeline
@@ -115,6 +138,20 @@ cd ai-service
 
 Integration test tự skip nếu chưa cung cấp video và hai model weights. Xem lệnh opt-in trong [AI service README](ai-service/README.md#chạy-test).
 
+Backend:
+
+```bash
+cd backend
+npm install
+cp .env.example .env
+npm run db:generate
+npm run db:migrate
+npm test
+npm run dev
+```
+
+Xem hướng dẫn PostgreSQL, seed và AI import đầy đủ trong [Backend README](backend/README.md).
+
 ## Kết quả minh họa
 
 Baseline cũ với `7.mp4` xử lý 520 frame và ghi nhận 36 lượt bbox cắt qua vạch: 17 ô tô, 15 xe máy và 4 xe tải. Đây không phải accuracy benchmark và không phải số vi phạm đã xác minh.
@@ -141,4 +178,4 @@ Ba file root `traffic_violation_detection.py`, `license_plate_recognition.py`, `
 - Line coordinates phải hiệu chỉnh theo camera.
 - OCR chưa có temporal aggregation/retry trên nhiều frame.
 - Chưa có traffic signal recognition, perspective calibration hay speed estimation.
-- Chưa tích hợp NestJS, PostgreSQL, Redis hoặc Docker trong Phase 01.
+- Phase 02 đã có NestJS/PostgreSQL foundation nhưng chưa có production authentication, Redis worker, object storage, Frontend hoặc Docker.
