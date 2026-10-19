@@ -108,7 +108,7 @@ erDiagram
 | JSON Phase 01 | PostgreSQL | Quyết định |
 |---|---|---|
 | `summary.job_id` | `ProcessingJob.id` | Phải trùng `--job-id` |
-| `schema_version` | `ProcessingJob.aiSchemaVersion` | Chỉ hỗ trợ `1.0` |
+| `schema_version` | `ProcessingJob.aiSchemaVersion` | Hỗ trợ `1.0` và `1.1`; root, summary và từng event phải nhất quán. |
 | `event_id` | `DetectionEvent.sourceEventId` | UUID nguồn, unique trong job |
 | `event_type` | `DetectionEvent.eventType` | Chỉ `LINE_CROSSING_CANDIDATE` |
 | `status` | `DetectionEvent.reviewStatus` | `PENDING_REVIEW`; review sau import |
@@ -116,6 +116,7 @@ erDiagram
 | OCR fields | các cột nullable tương ứng | Không tạo confidence/plate giả |
 | event object | `rawPayload` | Giữ payload gốc phục vụ audit/debug |
 | `evidence_path` | `EvidenceAsset.storageKey` | Validate relative path và copy vào storage boundary |
+| `plate_crop_path` (schema `1.1`, tùy chọn) | `EvidenceAsset.storageKey`, `EvidenceAsset.assetType=PLATE_CROP` | Chỉ `.jpg`, `.jpeg`, `.png`; schema `1.0` không chấp nhận field này. |
 | `summary.artifacts.annotated_video` | Evidence của job | Chỉ import khi path hợp lệ và file tồn tại |
 
 `started_at`/`finished_at` là thời gian xử lý, không phải thời điểm camera ghi hình. Vì Phase 01 không cung cấp timestamp tuyệt đối của video, `detectedAt` để `null`; không suy diễn dữ liệu.

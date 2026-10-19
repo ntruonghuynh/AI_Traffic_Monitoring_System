@@ -85,6 +85,8 @@ Tạo job không gọi Python và không giả lập completion. Worker/Redis th
 
 ## Detection Event và Evidence
 
+Các response event/detail có `evidenceAssets` gồm metadata của cả `IMAGE` và `PLATE_CROP` khi có crop. Tải nội dung qua `GET /evidence/:id/content` như các evidence khác; route và xác thực không đổi.
+
 | Method | Route | Mục đích |
 |---|---|---|
 | GET | `/events` | Filter/phân trang/stable sort |
