@@ -1,5 +1,5 @@
 import { Controller, Get, Param, ParseUUIDPipe, StreamableFile, UseGuards } from '@nestjs/common';
-import { ApiHeader, ApiProduces, ApiTags } from '@nestjs/swagger';
+import { ApiHeader, ApiProduces, ApiSecurity, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { Res } from '@nestjs/common';
 import { InternalTokenGuard } from '../common/guards/internal-token.guard';
@@ -13,6 +13,7 @@ export class EvidenceController {
   @Get(':id/content')
   @UseGuards(InternalTokenGuard)
   @ApiHeader({ name: 'X-Internal-Token', required: true })
+  @ApiSecurity('internal-token')
   @ApiProduces('image/jpeg', 'video/mp4', 'application/octet-stream')
   async content(@Param('id', new ParseUUIDPipe()) id: string, @Res({ passthrough: true }) response: Response) {
     const { asset, content } = await this.evidence.read(id);

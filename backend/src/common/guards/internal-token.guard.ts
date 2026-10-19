@@ -1,19 +1,24 @@
 import { CanActivate, ExecutionContext, ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { timingSafeEqual } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import type { Request } from 'express';
+
+export const DEVELOPMENT_TOKEN_PLACEHOLDER = 'replace-with-a-long-random-development-token';
 
 @Injectable()
 export class InternalTokenGuard implements CanActivate {
   constructor(private readonly config: ConfigService) {}
 
   canActivate(context: ExecutionContext): boolean {
-    if (this.config.get<string>('NODE_ENV') === 'production') {
-      throw new ForbiddenException('Review endpoint bị vô hiệu hóa trong production cho đến khi có authentication');
-    }
     const expected = this.config.get<string>('INTERNAL_API_TOKEN');
     if (!expected) {
       throw new ForbiddenException('INTERNAL_API_TOKEN chưa được cấu hình');
+    }
+    if (
+      this.config.get<string>('NODE_ENV') === 'production'
+      && expected === DEVELOPMENT_TOKEN_PLACEHOLDER
+    ) {
+      throw new ForbiddenException('Không được dùng token mẫu trong production');
     }
     const request = context.switchToHttp().getRequest<Request>();
     const supplied = request.header('x-internal-token');
@@ -24,8 +29,8 @@ export class InternalTokenGuard implements CanActivate {
   }
 
   private matches(left: string, right: string): boolean {
-    const leftBuffer = Buffer.from(left);
-    const rightBuffer = Buffer.from(right);
-    return leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer);
+    const leftHash = createHash('sha256').update(left, 'utf8').digest();
+    const rightHash = createHash('sha256').update(right, 'utf8').digest();
+    return timingSafeEqual(leftHash, rightHash);
   }
 }
