@@ -69,11 +69,78 @@ npm run db:migrate:deploy
 npm run db:seed
 ```
 
-## AI result import
+## Chạy AI worker
+
+Worker chạy AI service Python cho các job `PENDING`, rồi import kết quả vào PostgreSQL. Trước khi chạy worker, cần:
+
+- Python 3.10–3.12 (khuyến nghị 3.11), virtual environment và AI service đã cài editable. Từ repository root:
+
+  ```bash
+  python3.11 -m venv .venv
+  source .venv/bin/activate
+  python -m pip install --upgrade pip
+  python -m pip install -e "ai-service[dev]"
+  ```
+
+- Hai model weights `ai-service/models/yolov8m.pt` và `ai-service/models/license_plate_detector.pt`. Không commit weights vào Git. Xem [hướng dẫn model](../ai-service/models/README.md).
+- PostgreSQL đã chạy, `DATABASE_URL` trỏ tới đúng database, và migrations đã được áp dụng (`npm run db:migrate:deploy`).
+- Tạo/cập nhật `backend/.env` theo `.env.example`. Worker đọc cấu hình backend từ `.env` trong thư mục `backend/`.
+
+### Biến môi trường
+
+| Biến | Bắt buộc? | Mặc định | Ví dụ / ràng buộc |
+|---|---|---|---|
+| `DATABASE_URL` | Có | Không có | PostgreSQL URL hợp lệ; worker dùng kết nối này để claim và cập nhật job. |
+| `AI_PYTHON_BIN` | Có | Không có | Đường dẫn tuyệt đối tới Python executable, ví dụ `/repo/.venv/bin/python`; file phải có quyền chạy. |
+| `AI_SERVICE_ROOT` | Có | Không có | Đường dẫn tuyệt đối tới thư mục `ai-service/`. |
+| `AI_JOB_TIMEOUT_MS` | Có | Không có | Số nguyên dương, không có giới hạn tối đa trong code. Ví dụ `180000`; cần điều chỉnh theo độ dài video và máy. Video 520 frame đã đo mất khoảng 42 giây trong Python nên 180000 ms chỉ là mốc tham khảo. |
+| `AI_WORKER_POLL_INTERVAL_MS` | Có | Không có | Số nguyên dương, không có giới hạn tối đa trong code. Ví dụ `1000`. Nếu thiếu hoặc không hợp lệ, worker thoát khi khởi động. |
+| `AI_WORKER_CONCURRENCY` | Không | `1` | Số nguyên dương, không có giới hạn tối đa trong code. |
+| `AI_KEEP_FAILED_WORKDIR` | Không | `false` | Chỉ nhận chuỗi `true` hoặc `false`; giữ thư mục tạm của job thất bại khi đặt `true`. Job thành công luôn xóa thư mục tạm. |
+| `AI_CONFIG_PATH` | Không | Python dùng `ai-service/configs/default.yaml` | Nếu đặt, phải là đường dẫn tuyệt đối tới file đọc được. Đường dẫn model tương đối trong YAML tính từ thư mục cha thứ hai của file config. |
+| `TRAFFIC_AI_VEHICLE_MODEL_PATH` | Không | `models/yolov8m.pt` trong AI service | Python override model xe; nên dùng đường dẫn tuyệt đối. |
+| `TRAFFIC_AI_PLATE_MODEL_PATH` | Không | `models/license_plate_detector.pt` trong AI service | Python override model biển số; nên dùng đường dẫn tuyệt đối. |
+| `TRAFFIC_AI_DEVICE` | Không | `auto` | Python nhận `auto`, `cpu`, `cuda` hoặc `mps`. |
+
+Các biến `TRAFFIC_AI_*` được chuyển sang tiến trình Python. `DATABASE_URL` và `TEST_DATABASE_URL` bị loại khỏi environment của tiến trình con.
+
+### Khởi chạy
+
+Trong terminal backend, build rồi chạy worker bằng JavaScript đã build:
+
+```bash
+cd backend
+npm run build
+npm run worker
+```
+
+`npm run worker` chạy `node dist/worker.main.js`; không chạy worker bằng `tsx` vì cần decorator metadata. API chạy riêng trong terminal khác sau khi build:
+
+```bash
+cd backend
+node dist/main.js
+```
+
+### Luồng job và vận hành
+
+`POST /api/v1/jobs` tạo job `PENDING`. Worker claim job cũ nhất đang `PENDING`, chuyển sang `PROCESSING`, chạy Python rồi import `results.json` và evidence. Kết quả kết thúc ở `COMPLETED` hoặc `FAILED`. Worker không tự retry; job `PROCESSING` quá hạn được đánh dấu `FAILED` lúc khởi động worker và trong các lần recovery định kỳ.
+
+Worker sẽ nhặt mọi job `PENDING` trong database đó. Kiểm tra hàng đợi trước khi bật worker, nhất là database có dữ liệu cũ. Đưa video vào storage qua API upload; không thay trực tiếp file video đang lưu vì nhiều job có thể cùng tham chiếu một storage key. Worker lấy video từ `Video.storageKey`, không nhận đường dẫn video từ request.
+
+Khi dừng worker bằng `SIGINT` hoặc `SIGTERM`, Python đang chạy bị dừng và job hiện tại được đánh dấu `FAILED`.
+
+### Xử lý sự cố
+
+- Worker thoát ngay lúc khởi động: kiểm tra các biến bắt buộc phía trên, đặc biệt `AI_WORKER_POLL_INTERVAL_MS`; đường dẫn Python phải tuyệt đối và executable, `AI_SERVICE_ROOT` phải là thư mục.
+- Job `FAILED`: xem `errorMessage` của job. Thông báo được giới hạn khoảng 1000 ký tự và đường dẫn tuyệt đối được che.
+- Python exit code `2`: thường là lỗi khởi động/configuration; kiểm tra model weights, config và log Python. Worker chuyển job sang `FAILED` nếu Python không tạo được JSON hợp lệ.
+- Có vẻ còn tiến trình Python sau khi dừng worker: worker gửi `SIGTERM` cho process group, rồi `SIGKILL` sau khoảng 1 giây nếu tiến trình chưa dừng. Kiểm tra process list trước khi khởi động worker khác.
+
+## AI result import thủ công
 
 1. Tạo video metadata/upload.
 2. `POST /api/v1/jobs` để lấy job UUID `PENDING`.
-3. Worker tương lai chạy Python với chính UUID đó.
+3. Chạy AI service hoặc cung cấp một `results.json` hợp lệ.
 4. Import kết quả:
 
 ```bash
