@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { Prisma } from '../generated/prisma/client';
 import { AiResultImportService } from '../ai-results/ai-result-import.service';
+import { safeError as formatSafeError } from '../common/utils/safe-error';
 import { PrismaService } from '../prisma/prisma.service';
 import { LocalStorageService } from '../storage/local-storage.service';
 
@@ -256,12 +257,7 @@ export class AiJobWorkerService implements OnModuleDestroy {
   }
 
   private safeError(error: unknown): string {
-    let message = error instanceof Error ? error.message : String(error);
-    for (const path of [this.storage.root, this.settings.serviceRoot, process.cwd(), tmpdir()]) {
-      if (path) message = message.replaceAll(resolve(path), '[path]');
-    }
-    message = message.replace(/(?:[A-Za-z]:\\|\/)(?:[^\s:'"<>|]+[\\/])*[^\s:'"<>|]*/g, '[path]');
-    return message.slice(0, 1_000);
+    return formatSafeError(error, [this.storage.root, this.settings.serviceRoot, process.cwd(), tmpdir()]);
   }
 
   private readSettings(config: ConfigService): WorkerSettings {
