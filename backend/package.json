@@ -22,7 +22,7 @@
     "db:migrate:deploy": "prisma migrate deploy",
     "db:seed": "prisma db seed",
     "db:validate": "prisma validate",
-    "import:ai": "tsx src/ai-results/import-ai.cli.ts"
+    "import:ai": "npm run build && node dist/ai-results/import-ai.cli.js"
   },
   "dependencies": {
     "@nestjs/common": "^12.1.3",
