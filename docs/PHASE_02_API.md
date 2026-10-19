@@ -93,7 +93,7 @@ Tạo job không gọi Python và không giả lập completion. Worker/Redis th
 | GET | `/evidence/:id/content` | Nội dung asset; cần `X-Internal-Token` |
 | PATCH | `/events/:id/review` | Review nội bộ; cần `X-Internal-Token` |
 
-Filter event: `videoId`, `jobId`, `eventType`, `reviewStatus`, `vehicleType`, `plateNumber`, `from`, `to`, `minTimestampSeconds`, `page`, `limit`.
+Filter event: `videoId`, `jobId`, `cameraId`, `eventType`, `reviewStatus`, `vehicleType`, `plateNumber`, `hasPlate`, `minConfidence`, `from`, `to`, `minTimestampSeconds`, `page`, `limit`. `hasPlate` nhận `true|false`; `minConfidence` nằm trong `0..1`. `cameraId` lọc qua video của job. `from`/`to` lọc `createdAt`.
 
 Review:
 
@@ -103,6 +103,15 @@ curl -X PATCH http://localhost:3000/api/v1/events/<event-uuid>/review \
   -H 'Content-Type: application/json' \
   -d '{"reviewStatus":"VERIFIED_CROSSING","note":"Đã kiểm tra hình ảnh"}'
 ```
+
+## Statistics
+
+| Method | Route | Query | Response |
+|---|---|---|---|
+| GET | `/stats/overview` | Không | `{ cameras: { total, byStatus }, videos: { total }, jobs: { total, byStatus }, events: { total, byReviewStatus } }`; các bucket trạng thái có count 0 vẫn được trả. |
+| GET | `/stats/events?groupBy=...&from=<ISO>&to=<ISO>` | `groupBy` nhận `day`, `vehicleType` hoặc `reviewStatus` và là bắt buộc; `from` mặc định 30 ngày trước `to`, `to` mặc định hiện tại | `{ groupBy, items: [{ key, count }] }`. Ngày nhóm theo UTC; vehicleType chưa xác định có thể có `key: null`. |
+
+`from` và `to` phải là ISO date-time; `from` không được lớn hơn `to`. Hai route thống kê là GET công khai, không cần `X-Internal-Token`.
 
 Các route ghi/review/content được liệt kê ở trên yêu cầu token trong mọi môi trường. Tạo token bằng `openssl rand -hex 32` và thay giá trị mẫu trong `.env`; token mẫu bị từ chối trong production, còn token thật hợp lệ được chấp nhận. Các GET khác, health và Swagger vẫn công khai. API đọc còn lại cũng chỉ nên bind trong trusted development network ở Phase 02.
 

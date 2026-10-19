@@ -141,6 +141,14 @@ Các khóa ngoại: `Video.cameraId` → `Camera.id` (xóa camera thì đặt nu
 
 Python là hộp đen đối với backend: backend kiểm tra schema rồi lưu candidate mà Python đưa về; không lưu dữ liệu từng frame. `annotated_video` là tùy chọn. Biển số được lưu đúng như Python trả về, kể cả null. Idempotency dùng `(jobId, sourceEventId)` cho event và `storageKey` cho asset. `PATCH /api/v1/events/:id/review` chỉ ghi nhận review; `VERIFIED_CROSSING` không tự xác nhận vi phạm đèn đỏ hợp pháp.
 
+## API thống kê và lọc sự kiện
+
+- `GET /api/v1/stats/overview` trả tổng camera, video, job và event; camera/job/review có thêm số lượng theo từng trạng thái, kể cả trạng thái đang có count 0.
+- `GET /api/v1/stats/events?groupBy=day|vehicleType|reviewStatus&from=<ISO>&to=<ISO>` nhóm event theo ngày UTC, loại phương tiện hoặc trạng thái review. `groupBy` bắt buộc; mặc định lấy 30 ngày gần nhất. Ngày `from`/`to` phải là ISO date-time và `from` không được sau `to`.
+- `GET /api/v1/events` nhận thêm `cameraId` (lọc qua video của job), `hasPlate=true|false` và `minConfidence` từ 0 đến 1. Các filter này kết hợp với filter cũ và phân trang hiện có.
+
+Hai route statistics và các route GET events vẫn công khai, không cần `X-Internal-Token`. Chi tiết API nằm trong [tài liệu Phase 02 API](../docs/PHASE_02_API.md).
+
 ## Chạy AI worker
 
 Worker chạy AI service Python cho các job `PENDING`, rồi import kết quả vào PostgreSQL. Trước khi chạy worker, cần:
