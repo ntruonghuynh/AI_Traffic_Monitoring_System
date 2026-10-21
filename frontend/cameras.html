@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#F4F7FB">
+  <title>Quản lý Camera · Traffic Monitor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css?v=4">
+</head>
+<body data-page="cameras">
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Điều hướng chính">
+      <a class="brand" href="index.html" aria-label="Traffic Monitor"><span class="brand-mark" aria-hidden="true">TM</span><span class="brand-copy"><strong>Traffic Monitor</strong><small>HỆ THỐNG GIÁM SÁT</small></span></a>
+      <div class="sidebar-caption">KHÔNG GIAN LÀM VIỆC</div>
+      <nav class="nav-list">
+        <a class="nav-item" href="index.html"><span class="icon-wrap" data-icon="grid"></span><span>Tổng quan</span></a>
+        <a class="nav-item" href="violations.html"><span class="icon-wrap" data-icon="list"></span><span>Danh sách vi phạm</span></a>
+        <a class="nav-item" href="jobs.html"><span class="icon-wrap" data-icon="video"></span><span>Video &amp; Tiến trình</span></a>
+        <a class="nav-item is-active" href="cameras.html" aria-current="page"><span class="icon-wrap" data-icon="camera"></span><span>Quản lý Camera</span></a>
+        <a class="nav-item" href="#token-field"><span class="icon-wrap" data-icon="settings"></span><span>Cài đặt &amp; Token</span></a>
+      </nav>
+      <div class="sidebar-foot"><span class="sidebar-foot-dot"></span><span>Thông tin camera và video liên kết</span></div>
+    </aside>
+    <main class="main-area">
+      <header class="topbar"><div class="topbar-context"><span class="eyebrow">TRUNG TÂM ĐIỀU HÀNH</span><span class="topbar-separator">/</span><span>Quản lý Camera</span></div><div class="topbar-tools"><label class="token-control" for="token-field"><span class="token-label">TOKEN PHIÊN</span><input id="token-field" class="token-input" type="password" autocomplete="off" placeholder="Nhập internal token" aria-label="Internal token"></label><button class="button button-secondary button-small" id="save-token" type="button">Lưu token</button><div class="system-status" id="system-status" role="status" aria-live="polite"><span class="status-dot is-checking"></span><span class="system-label">Đang kiểm tra hệ thống</span></div></div></header>
+      <div class="page-content cameras-page">
+        <section class="page-heading"><div><div class="eyebrow">THIẾT BỊ &amp; NGUỒN VIDEO</div><h1>Quản lý Camera</h1><p class="page-subtitle">Quản lý thông tin và trạng thái camera</p></div><button class="button button-secondary" id="refresh-cameras" type="button"><span class="button-icon" data-icon="refresh"></span>Làm mới</button></section>
+
+        <section class="panel camera-create-panel" aria-label="Thêm camera"><div class="panel-heading"><div><h2>Thêm camera</h2><p>Các trường có dấu * là bắt buộc</p></div></div>
+          <form id="camera-create-form" class="camera-form">
+            <label class="field"><span>TÊN CAMERA *</span><input name="name" type="text" maxlength="120" required></label>
+            <label class="field"><span>VỊ TRÍ *</span><input name="location" type="text" maxlength="255" required></label>
+            <label class="field camera-description-field"><span>MÔ TẢ</span><textarea name="description" maxlength="2000" rows="2"></textarea></label>
+            <label class="field"><span>LOẠI NGUỒN</span><select name="sourceType"><option value="FILE_UPLOAD">Tải tệp lên</option><option value="RTSP_METADATA">Metadata nguồn</option><option value="OTHER">Khác</option></select></label>
+            <label class="field"><span>TRẠNG THÁI</span><select name="status"><option value="ACTIVE">Hoạt động</option><option value="INACTIVE">Không hoạt động</option><option value="MAINTENANCE">Bảo trì</option></select></label>
+            <button id="camera-create-submit" class="button button-primary" type="submit">Thêm camera</button>
+          </form>
+          <p id="camera-token-required" class="token-hint">Cần internal token để thêm, sửa hoặc xóa camera.</p>
+          <div id="camera-create-feedback" class="list-feedback" role="status" aria-live="polite"></div>
+        </section>
+
+        <section class="table-panel panel camera-table-panel" aria-label="Danh sách camera">
+          <div class="table-toolbar"><div><h2>Danh sách camera</h2><p id="cameras-count">Đang tải danh sách…</p></div>
+            <form id="camera-filter-form" class="inline-filter"><label class="field"><span>TRẠNG THÁI</span><select id="camera-status-filter" name="status"><option value="">Tất cả trạng thái</option><option value="ACTIVE">Hoạt động</option><option value="INACTIVE">Không hoạt động</option><option value="MAINTENANCE">Bảo trì</option></select></label><label class="page-size">Số dòng<select id="camera-page-size"><option value="10" selected>10</option><option value="20">20</option><option value="50">50</option></select></label><button class="button button-secondary button-small" type="submit">Lọc</button><button class="button button-secondary button-small" id="clear-camera-filter" type="button">Xóa lọc</button></form>
+          </div>
+          <div class="table-scroll"><table class="data-table"><thead><tr><th>TÊN</th><th>VỊ TRÍ</th><th>MÔ TẢ</th><th>LOẠI NGUỒN</th><th>TRẠNG THÁI</th><th>SỐ VIDEO</th><th></th></tr></thead><tbody id="cameras-body"></tbody></table></div>
+          <div id="cameras-feedback" class="list-feedback" role="status" aria-live="polite"></div>
+          <div class="pagination"><span id="cameras-page-summary">—</span><div class="pagination-controls"><button class="page-button" id="cameras-previous" type="button" aria-label="Trang camera trước"><span data-icon="chevron-left"></span></button><span class="page-current" id="cameras-page-current">—</span><button class="page-button" id="cameras-next" type="button" aria-label="Trang camera sau"><span data-icon="chevron-right"></span></button></div></div>
+        </section>
+        <footer class="page-footer">Số video và thông tin camera được hiển thị theo dữ liệu API.</footer>
+      </div>
+    </main>
+  </div>
+  <script src="js/config.js"></script><script src="js/api.js?v=3"></script><script src="js/app.js?v=8"></script>
+</body>
+</html>
