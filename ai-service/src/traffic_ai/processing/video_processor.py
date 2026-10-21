@@ -116,6 +116,7 @@ class VideoProcessor:
 
                 frame_events: list[LineCrossingEvent] = []
                 frame_plates: list[PlateDetection] = []
+                frame_event_plates: dict[str, PlateDetection] = {}
                 frame_plate_crops: dict[str, Any] = {}
                 for transition in transitions:
                     recognition, plate_detection, plate_crop, plate_crop_reason = self._recognize_plate(
@@ -141,6 +142,8 @@ class VideoProcessor:
                     )
                     frame_events.append(event)
                     events.append(event)
+                    if plate_detection is not None:
+                        frame_event_plates[event.event_id] = plate_detection
                     if plate_crop is not None:
                         frame_plate_crops[event.event_id] = plate_crop
 
@@ -153,7 +156,16 @@ class VideoProcessor:
                     plates=frame_plates,
                 )
                 for event in frame_events:
-                    event.evidence_path = writer.save_evidence(event.event_id, rendered)
+                    evidence = annotate_frame(
+                        frame,
+                        line_start=line_start,
+                        line_end=line_end,
+                        tracks=tracks,
+                        plates=([frame_event_plates[event.event_id]]
+                                if event.event_id in frame_event_plates else []),
+                        highlight_track_id=event.track_id,
+                    )
+                    event.evidence_path = writer.save_evidence(event.event_id, evidence)
                     plate_crop = frame_plate_crops.get(event.event_id)
                     if plate_crop is not None:
                         event.plate_crop_path = writer.save_plate_crop(event.event_id, plate_crop)

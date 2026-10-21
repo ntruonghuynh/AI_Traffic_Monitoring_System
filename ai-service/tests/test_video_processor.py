@@ -9,12 +9,14 @@ import pytest
 
 from traffic_ai.config import load_config
 from traffic_ai.processing.video_processor import VideoProcessor
+from traffic_ai.processing.visualization import annotate_frame
 from traffic_ai.ocr.plate_detector import PlateCrop
 from traffic_ai.ocr.plate_validator import PlateValidator
 from traffic_ai.schemas import (
     BoundingBox,
     PlateCropReason,
     PlateDetection,
+    Point,
     ProcessingStatus,
     TrackedVehicle,
     VehicleDetection,
@@ -121,6 +123,20 @@ class MultiPlateDetector:
         return [
             PlateCrop(PlateDetection(BoundingBox(40, 50, 50, 56), 0.4, 0, "license_plate"), self.low_confidence_image),
             PlateCrop(PlateDetection(BoundingBox(42, 52, 58, 60), 0.95, 0, "license_plate"), self.high_confidence_image),
+        ]
+
+
+class PerVehiclePlateDetector:
+    def __init__(self):
+        self.crop = np.full((24, 32, 3), 80, dtype=np.uint8)
+
+    def detect(self, frame, bbox):
+        left = int(bbox.x1)
+        return [
+            PlateCrop(
+                PlateDetection(BoundingBox(left + 4, 27, left + 16, 34), 0.95, 0, "license_plate"),
+                self.crop,
+            )
         ]
 
 
@@ -320,3 +336,66 @@ def test_multiple_events_in_one_frame_get_distinct_crop_files(monkeypatch, tmp_p
     paths = [event.plate_crop_path for event in result.events]
     assert len(set(paths)) == 2
     assert all(path is not None and (output_dir / path).is_file() for path in paths)
+
+
+def test_events_in_one_frame_get_separate_evidence_with_only_their_track_highlighted(
+    monkeypatch, tmp_path: Path
+) -> None:
+    result, output_dir = run_processor(
+        monkeypatch,
+        tmp_path,
+        detector=PerVehiclePlateDetector(),
+        recognizer=EmptyRecognizer(),
+        tracker=MultiCrossingTracker(),
+    )
+
+    assert len(result.events) == 2
+    first, second = result.events
+    assert first.frame_index == second.frame_index
+    assert first.track_id == 4
+    assert second.track_id == 5
+    assert first.evidence_path != second.evidence_path
+
+    first_image = cv2.imread(str(output_dir / first.evidence_path))
+    second_image = cv2.imread(str(output_dir / second.evidence_path))
+    assert first_image is not None
+    assert second_image is not None
+
+    def is_red(pixel: np.ndarray) -> bool:
+        blue, green, red = (int(value) for value in pixel)
+        return red > 140 and blue < 100 and green < 100
+
+    def is_blue(pixel: np.ndarray) -> bool:
+        blue, green, red = (int(value) for value in pixel)
+        return blue > 140 and green < 100 and red < 100
+
+    assert is_red(first_image[25, 20])
+    assert not is_red(first_image[25, 60])
+    assert is_red(second_image[25, 60])
+    assert not is_red(second_image[25, 20])
+    assert is_blue(first_image[27, 24])
+    assert not is_blue(first_image[27, 64])
+    assert is_blue(second_image[27, 64])
+    assert not is_blue(second_image[27, 24])
+    assert is_red(first_image[12, 25])
+    assert is_red(second_image[12, 65])
+    assert not np.array_equal(first_image, second_image)
+
+
+def test_candidate_label_near_top_edge_stays_in_frame_without_covering_vehicle() -> None:
+    frame = np.zeros((120, 500, 3), dtype=np.uint8)
+    vehicle = TrackedVehicle(
+        track_id=4,
+        detection=VehicleDetection(BoundingBox(40, 2, 160, 80), 0.9, 2, "car"),
+    )
+
+    rendered = annotate_frame(
+        frame,
+        line_start=Point(0, 110),
+        line_end=Point(499, 110),
+        tracks=[vehicle],
+        highlight_track_id=4,
+    )
+
+    assert tuple(int(value) for value in rendered[5, 165]) == (0, 0, 255)
+    assert tuple(int(value) for value in rendered[20, 100]) == (0, 0, 0)
