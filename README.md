@@ -154,13 +154,22 @@ Xem hướng dẫn PostgreSQL, seed và AI import đầy đủ trong [Backend RE
 
 ## Kết quả minh họa
 
-Baseline cũ với `7.mp4` xử lý 520 frame và ghi nhận 36 lượt bbox cắt qua vạch: 17 ô tô, 15 xe máy và 4 xe tải. Đây không phải accuracy benchmark và không phải số vi phạm đã xác minh.
+Baseline cũ với `7.mp4`, chạy bằng cấu hình cũ, ghi nhận 36 lượt bbox cắt qua vạch: 17 ô tô, 15 xe máy và 4 xe tải. Lần chạy hiện tại trên `7.mp4` ghi nhận 48 sự kiện ứng viên. Đây không phải accuracy benchmark và không phải số vi phạm đã xác minh.
 
-![Phát hiện nhiều phương tiện cắt qua vạch](output/violation_1.jpg)
+## Giới hạn đã biết: độ phân giải biển số
 
-![Phát hiện ô tô và vùng biển số](output/violation_2.jpg)
+Phép đo trên `7.mp4` dùng cấu hình hiện tại: vạch chuẩn hóa `y=0.48`, hướng `positive_to_negative`, tolerance `8 px`, confidence detector phương tiện/biển số `0.30`, IoU `0.50`, ảnh suy luận `640`; nguồn video có độ phân giải `1920×1080`. Có 48 track cắt vạch.
 
-![Phát hiện phương tiện trong khung hình tiếp theo](output/violation_3.jpg)
+| Giai đoạn | Track có crop | Chiều rộng crop: trung vị | P90 | Lớn nhất |
+| --- | ---: | ---: | ---: | ---: |
+| Frame cắt vạch | 22/48 | 34 px | 38,6 px | 45 px |
+| 30 frame kế tiếp, crop tốt nhất theo track | 25/48 | 34 px | 43,2 px | 59 px |
+
+Không track nào có crop rộng từ 60 px trở lên ở cả hai giai đoạn. Chọn crop tốt nhất theo track chỉ tăng chiều rộng trung vị khoảng `+1 px`, nên cách này không được triển khai.
+
+Biển số từ camera xa không có đủ điểm ảnh để OCR đọc. Vì vậy, `plate_number: null` ở đây phản ánh giới hạn của nguồn video, không phải kết luận về độ chính xác của OCR. Phép đo này không phải accuracy benchmark. Hướng cải thiện là dùng nguồn quay gần hơn hoặc độ phân giải cao hơn để biển số rộng khoảng 100 px trở lên, hoặc kiểm chứng OCR riêng bằng ảnh biển số cận cảnh có phép sử dụng.
+
+Ghi chú cấu hình: `default.yaml` đặt `min_crop_size` dưới `vehicle_detection`, trong khi loader đọc giá trị này từ `plate_detection`; giá trị mặc định `20` vẫn đúng. Cần xử lý riêng, không thuộc thay đổi tài liệu này.
 
 ## Legacy source
 
