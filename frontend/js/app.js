@@ -1166,6 +1166,263 @@
     window.addEventListener('pagehide', () => { globalThis.clearInterval(pollTimer); pollingJobs.clear(); });
   }
 
+  function cameraStatusLabel(status) {
+    const labels = { ACTIVE: 'Hoạt động', INACTIVE: 'Không hoạt động', MAINTENANCE: 'Bảo trì' };
+    return labels[status] || status || 'Chưa rõ';
+  }
+
+  function cameraStatusTone(status) {
+    if (status === 'ACTIVE') return 'status-green';
+    if (status === 'MAINTENANCE') return 'status-yellow';
+    if (status === 'INACTIVE') return 'status-neutral';
+    return 'status-neutral';
+  }
+
+  function cameraSourceLabel(sourceType) {
+    const labels = { FILE_UPLOAD: 'Tải tệp lên', RTSP_METADATA: 'Metadata nguồn', OTHER: 'Khác' };
+    return labels[sourceType] || sourceType || '—';
+  }
+
+  function cameraChangedFields(original, edited) {
+    const changed = {};
+    for (const field of ['name', 'location', 'description', 'sourceType', 'status']) {
+      const before = String(original[field] ?? '').trim();
+      const after = String(edited[field] ?? '').trim();
+      if (before !== after) changed[field] = after;
+    }
+    return changed;
+  }
+
+  function validateCameraFields(fields) {
+    if (!String(fields.name || '').trim()) return 'Tên camera là bắt buộc.';
+    if (String(fields.name).trim().length > 120) return 'Tên camera tối đa 120 ký tự.';
+    if (!String(fields.location || '').trim()) return 'Vị trí là bắt buộc.';
+    if (String(fields.location).trim().length > 255) return 'Vị trí tối đa 255 ký tự.';
+    if (String(fields.description || '').length > 2000) return 'Mô tả tối đa 2000 ký tự.';
+    return '';
+  }
+
+  function initCameras() {
+    const createForm = document.getElementById('camera-create-form');
+    const createFeedback = document.getElementById('camera-create-feedback');
+    const createButton = document.getElementById('camera-create-submit');
+    const tokenHint = document.getElementById('camera-token-required');
+    const filterForm = document.getElementById('camera-filter-form');
+    const statusFilter = document.getElementById('camera-status-filter');
+    const pageSize = document.getElementById('camera-page-size');
+    const body = document.getElementById('cameras-body');
+    const feedback = document.getElementById('cameras-feedback');
+    const count = document.getElementById('cameras-count');
+    const summary = document.getElementById('cameras-page-summary');
+    const current = document.getElementById('cameras-page-current');
+    const previous = document.getElementById('cameras-previous');
+    const next = document.getElementById('cameras-next');
+    let page = 1;
+    let status = '';
+    let sequence = 0;
+
+    function syncTokenAvailability() {
+      const hasToken = Boolean(ApiClient.getToken());
+      createButton.disabled = !hasToken;
+      tokenHint.hidden = hasToken;
+      body.querySelectorAll('[data-camera-write="true"]').forEach((button) => {
+        button.disabled = !hasToken;
+        if (!hasToken) button.title = 'Cần internal token';
+      });
+    }
+    syncTokenAvailability();
+    window.addEventListener('internal-token-change', syncTokenAvailability);
+
+    function updatePagination(meta) {
+      const total = Number(meta && meta.total) || 0;
+      const totalPages = Number(meta && meta.totalPages) || 0;
+      page = Number(meta && meta.page) || page;
+      count.textContent = `${total.toLocaleString('vi-VN')} camera`;
+      summary.textContent = total ? `Trang ${page} / ${totalPages} · ${total.toLocaleString('vi-VN')} kết quả` : 'Không có kết quả';
+      current.textContent = totalPages ? `${page}/${totalPages}` : '—';
+      previous.disabled = page <= 1;
+      next.disabled = totalPages === 0 || page >= totalPages;
+    }
+
+    function cameraActionButton(label, className, handler) {
+      const button = make('button', className, label);
+      button.type = 'button';
+      button.dataset.cameraWrite = 'true';
+      button.disabled = !ApiClient.getToken();
+      if (button.disabled) button.title = 'Cần internal token';
+      button.addEventListener('click', handler);
+      return button;
+    }
+
+    function addRowError(actionCell, error) {
+      const details = errorMessage(error);
+      const hint = details.statusCode === 401 || details.statusCode === 403 ? ' Vui lòng nhập và lưu internal token ở thanh trên.' : '';
+      actionCell.append(make('span', 'camera-row-error', `${details.statusCode ? `HTTP ${details.statusCode} · ` : ''}${details.message}${hint}`));
+    }
+
+    function renderCameraRow(camera) {
+      const row = make('tr');
+      const name = make('td', '', camera.name || '—');
+      const location = make('td', '', camera.location || '—');
+      const description = make('td', 'camera-description', camera.description || '—');
+      if (camera.description) description.title = camera.description;
+      const source = make('td', '', cameraSourceLabel(camera.sourceType));
+      const statusCell = make('td');
+      statusCell.append(make('span', `status-badge ${cameraStatusTone(camera.status)}`, cameraStatusLabel(camera.status)));
+      const videoCount = make('td', 'mono', camera._count && Number.isFinite(camera._count.videos) ? camera._count.videos.toLocaleString('vi-VN') : '—');
+      const action = make('td', 'camera-actions');
+      const edit = cameraActionButton('Sửa', 'button button-secondary button-small', () => editCameraRow(row, camera, action));
+      const remove = cameraActionButton('Xóa', 'button button-danger button-small', () => confirmCameraDelete(row, camera, action));
+      action.append(edit, remove);
+      row.append(name, location, description, source, statusCell, videoCount, action);
+      return row;
+    }
+
+    function editCameraRow(row, camera, actionCell) {
+      const [nameCell, locationCell, descriptionCell, sourceCell, statusCell] = row.children;
+      const fields = {};
+      function replaceWithInput(cell, key, tag = 'input') {
+        const input = make(tag, 'camera-edit-field');
+        input.value = camera[key] || '';
+        if (tag === 'input') input.maxLength = key === 'name' ? 120 : 255;
+        if (tag === 'textarea') { input.maxLength = 2000; input.rows = 2; }
+        fields[key] = input;
+        cell.replaceChildren(input);
+      }
+      replaceWithInput(nameCell, 'name');
+      replaceWithInput(locationCell, 'location');
+      replaceWithInput(descriptionCell, 'description', 'textarea');
+
+      function selectField(cell, key, options, labels) {
+        const select = make('select', 'camera-edit-field');
+        for (const value of options) {
+          const option = make('option', '', labels[value] || value);
+          option.value = value;
+          select.append(option);
+        }
+        if (!options.includes(camera[key])) {
+          const option = make('option', '', camera[key] || '—');
+          option.value = camera[key] || '';
+          select.append(option);
+        }
+        select.value = camera[key] || '';
+        fields[key] = select;
+        cell.replaceChildren(select);
+      }
+      selectField(sourceCell, 'sourceType', ['FILE_UPLOAD', 'RTSP_METADATA', 'OTHER'], { FILE_UPLOAD: 'Tải tệp lên', RTSP_METADATA: 'Metadata nguồn', OTHER: 'Khác' });
+      selectField(statusCell, 'status', ['ACTIVE', 'INACTIVE', 'MAINTENANCE'], { ACTIVE: 'Hoạt động', INACTIVE: 'Không hoạt động', MAINTENANCE: 'Bảo trì' });
+
+      const save = cameraActionButton('Lưu', 'button button-primary button-small', async () => {
+        const edited = Object.fromEntries(Object.entries(fields).map(([key, input]) => [key, input.value]));
+        const validationError = validateCameraFields(edited);
+        if (validationError) { actionCell.replaceChildren(save, cancel, make('span', 'camera-row-error', validationError)); return; }
+        const changes = cameraChangedFields(camera, edited);
+        if (!Object.keys(changes).length) { load(); return; }
+        save.disabled = true;
+        try {
+          await ApiClient.patchJson(`/cameras/${encodeURIComponent(camera.id)}`, changes);
+          await load();
+        } catch (error) {
+          save.disabled = !ApiClient.getToken();
+          addRowError(actionCell, error);
+        }
+      });
+      const cancel = make('button', 'button button-secondary button-small', 'Hủy');
+      cancel.type = 'button';
+      cancel.addEventListener('click', () => load());
+      actionCell.replaceChildren(save, cancel);
+    }
+
+    function confirmCameraDelete(row, camera, actionCell) {
+      const confirmation = make('div', 'camera-delete-confirm');
+      confirmation.append(make('span', 'camera-delete-note', 'Video thuộc camera này vẫn được giữ, chỉ bỏ liên kết camera'));
+      const confirm = cameraActionButton('Xác nhận xóa', 'button button-danger button-small', async () => {
+        confirm.disabled = true;
+        try {
+          await ApiClient.deleteJson(`/cameras/${encodeURIComponent(camera.id)}`);
+          await load();
+        } catch (error) {
+          confirm.disabled = !ApiClient.getToken();
+          addRowError(actionCell, error);
+        }
+      });
+      const cancel = make('button', 'button button-secondary button-small', 'Hủy');
+      cancel.type = 'button';
+      cancel.addEventListener('click', () => actionCell.replaceChildren(
+        cameraActionButton('Sửa', 'button button-secondary button-small', () => editCameraRow(row, camera, actionCell)),
+        cameraActionButton('Xóa', 'button button-danger button-small', () => confirmCameraDelete(row, camera, actionCell)),
+      ));
+      confirmation.append(confirm, cancel);
+      actionCell.replaceChildren(confirmation);
+    }
+
+    async function load() {
+      const loadId = ++sequence;
+      body.replaceChildren();
+      addFeedback(feedback, 'Đang tải camera', 'Đang lấy danh sách từ API.');
+      count.textContent = 'Đang tải danh sách…';
+      const query = new URLSearchParams({ page: String(page), limit: String(pageSize.value) });
+      if (status) query.set('status', status);
+      try {
+        const result = await ApiClient.getJson(`/cameras?${query.toString()}`);
+        if (loadId !== sequence) return;
+        const cameras = Array.isArray(result && result.data) ? result.data : [];
+        body.replaceChildren(...cameras.map(renderCameraRow));
+        feedback.replaceChildren();
+        if (!cameras.length) addFeedback(feedback, 'Chưa có camera phù hợp', 'Thay đổi bộ lọc hoặc thêm camera.');
+        updatePagination(result && result.meta ? result.meta : { page, total: cameras.length, totalPages: cameras.length ? 1 : 0 });
+      } catch (error) {
+        if (loadId !== sequence) return;
+        count.textContent = 'Không tải được danh sách';
+        const details = errorMessage(error);
+        addFeedback(feedback, 'Không tải được camera', apiFailureText(details), 'error', details.statusCode, load);
+        summary.textContent = '—'; current.textContent = '—'; previous.disabled = true; next.disabled = true;
+      }
+    }
+
+    createForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      if (!ApiClient.getToken()) {
+        addFeedback(createFeedback, 'Cần internal token', 'Vui lòng nhập và lưu internal token ở thanh trên.', 'error', 401);
+        return;
+      }
+      const values = new FormData(createForm);
+      const payload = {
+        name: String(values.get('name') || '').trim(),
+        location: String(values.get('location') || '').trim(),
+        description: String(values.get('description') || '').trim(),
+        sourceType: String(values.get('sourceType') || 'FILE_UPLOAD'),
+        status: String(values.get('status') || 'ACTIVE'),
+      };
+      const validationError = validateCameraFields(payload);
+      if (validationError) { addFeedback(createFeedback, 'Kiểm tra thông tin', validationError, 'error'); return; }
+      createButton.disabled = true;
+      addFeedback(createFeedback, 'Đang thêm camera', 'Đang gửi thông tin đến API.');
+      try {
+        await ApiClient.postJson('/cameras', payload);
+        createForm.reset();
+        addFeedback(createFeedback, 'Đã thêm camera', 'Camera đã được thêm.', 'success');
+        page = 1;
+        await load();
+      } catch (error) {
+        const details = errorMessage(error);
+        addFeedback(createFeedback, 'Không thêm được camera', apiFailureText(details), 'error', details.statusCode);
+      } finally { syncTokenAvailability(); }
+    });
+
+    filterForm.addEventListener('submit', (event) => {
+      event.preventDefault(); status = statusFilter.value; page = 1; load();
+    });
+    document.getElementById('clear-camera-filter').addEventListener('click', () => {
+      filterForm.reset(); status = ''; page = 1; load();
+    });
+    document.getElementById('refresh-cameras').addEventListener('click', load);
+    pageSize.addEventListener('change', () => { page = 1; load(); });
+    previous.addEventListener('click', () => { if (page > 1) { page -= 1; load(); } });
+    next.addEventListener('click', () => { page += 1; load(); });
+    load();
+  }
+
   renderIcons();
   trackStickyHeaderHeight();
   wireToken();
@@ -1174,6 +1431,7 @@
   if (document.body.dataset.page === 'violation') initDetail();
   if (document.body.dataset.page === 'jobs') initJobs();
   if (document.body.dataset.page === 'dashboard') initDashboard();
+  if (document.body.dataset.page === 'cameras') initCameras();
   window.addEventListener('pagehide', () => {
     for (const url of activeObjectUrls) URL.revokeObjectURL(url);
     activeObjectUrls.clear();

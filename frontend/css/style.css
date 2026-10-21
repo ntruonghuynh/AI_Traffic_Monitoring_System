@@ -203,6 +203,26 @@ h1 { margin-bottom: 4px; font-size: 24px; font-weight: 700; letter-spacing: -.03
 .chart-bar-review { fill: var(--accent); }
 .dashboard-recent-panel .table-toolbar { min-height: 64px; }
 .dashboard-recent-panel .list-feedback .feedback-box { margin-bottom: 16px; }
+.cameras-page { display: grid; gap: 20px; }
+.cameras-page .page-heading { margin-bottom: 0; }
+.camera-create-panel { padding: 20px; }
+.camera-create-panel .panel-heading { margin-bottom: 16px; }
+.camera-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: end; gap: 12px; }
+.camera-form .camera-description-field { grid-column: span 2; }
+.camera-form textarea { width: 100%; min-height: 38px; border: 1px solid var(--border); border-radius: var(--radius-control); outline: none; padding: 8px 12px; color: var(--text-primary); background: #fff; font-size: 12px; line-height: 1.5; resize: vertical; }
+.camera-form textarea:focus, .camera-edit-field:focus { border-color: var(--primary); box-shadow: var(--focus-ring); }
+.camera-token-required { margin: 10px 0 0; color: var(--text-secondary); font-size: 11px; }
+.camera-token-required[hidden] { display: none; }
+.camera-table-panel .table-toolbar { align-items: flex-end; }
+.camera-description { max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+.camera-actions { min-width: 190px; }
+.camera-actions > .button { margin-right: 6px; }
+.camera-edit-field { width: 100%; min-width: 100px; min-height: 36px; border: 1px solid var(--border); border-radius: var(--radius-control); outline: none; padding: 6px 8px; color: var(--text-primary); background: #fff; font: 11px/1.4 var(--font-body); }
+textarea.camera-edit-field { min-height: 58px; resize: vertical; }
+.camera-row-error { display: block; max-width: 260px; margin-top: 6px; color: var(--state-red-text); font-size: 10px; white-space: normal; overflow-wrap: anywhere; }
+.camera-delete-confirm { display: grid; min-width: 250px; gap: 7px; white-space: normal; }
+.camera-delete-note { color: var(--state-yellow-text); font-size: 10px; line-height: 1.4; }
+.camera-delete-confirm > .button { margin-right: 5px; }
 .jobs-page { display: grid; gap: 20px; }
 .jobs-page .page-heading { margin-bottom: 0; }
 .upload-panel { padding: 20px; }
@@ -310,6 +330,7 @@ dialog.evidence-modal::backdrop { background: rgba(26, 40, 58, .5); }
   .detail-layout { grid-template-columns: minmax(0, 1fr); }
   .review-panel { position: static; }
   .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .camera-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 760px) {
   :root { --page-gutter: 16px; }
@@ -326,6 +347,11 @@ dialog.evidence-modal::backdrop { background: rgba(26, 40, 58, .5); }
   .dashboard-charts { grid-template-columns: minmax(0, 1fr); }
   .dashboard-charts .chart-panel:first-child { grid-column: auto; }
   .dashboard-kpi-panel, .chart-panel { padding: 16px; }
+  .cameras-page { gap: 16px; }
+  .camera-create-panel { padding: 16px; }
+  .camera-form { grid-template-columns: minmax(0, 1fr); }
+  .camera-form .camera-description-field { grid-column: auto; }
+  .camera-table-panel .table-toolbar { align-items: flex-start; flex-direction: column; }
   .jobs-page { gap: 16px; }
   .upload-form { grid-template-columns: 1fr; }
   .upload-form .button { width: 100%; }
@@ -354,6 +380,7 @@ dialog.evidence-modal::backdrop { background: rgba(26, 40, 58, .5); }
   .kpi-card { min-height: 104px; padding: 11px; }
   .kpi-value { font-size: 22px; }
   .dashboard-date-filter .button { flex: 1 1 auto; }
+  .camera-form > .button { width: 100%; }
   .metadata-grid { grid-template-columns: 1fr 1fr; }
   .evidence-panel, .event-info-panel, .review-panel { padding: 12px; }
 }

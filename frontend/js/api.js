@@ -69,6 +69,10 @@
       const response = await request(path, { method: 'PATCH', withToken: true, body });
       return response.json();
     },
+    async deleteJson(path) {
+      await request(path, { method: 'DELETE', withToken: true });
+      return null;
+    },
     async getHealth() {
       return this.getJson('/health');
     },
