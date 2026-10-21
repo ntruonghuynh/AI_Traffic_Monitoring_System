@@ -195,6 +195,266 @@
     return filters;
   }
 
+  function dashboardDateBound(value, isEnd) {
+    if (!value) return '';
+    const date = new Date(`${value}T${isEnd ? '23:59:59.999' : '00:00:00.000'}Z`);
+    return Number.isNaN(date.getTime()) ? '' : date.toISOString();
+  }
+
+  function formatUtcDayLabel(key) {
+    if (key === null) return '—';
+    const match = typeof key === 'string' ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(key) : null;
+    return match ? `${match[3]}/${match[2]}` : String(key);
+  }
+
+  function dashboardStatsPath(groupBy, from, to) {
+    const query = new URLSearchParams({ groupBy });
+    if (from) query.set('from', from);
+    if (to) query.set('to', to);
+    return `/stats/events?${query.toString()}`;
+  }
+
+  function dashboardChartModel(payload, groupBy, error = null) {
+    if (error) return { state: 'error', message: error.message || 'Không tải được dữ liệu biểu đồ.', items: [] };
+    if (!payload || payload.groupBy !== groupBy || !Array.isArray(payload.items)) {
+      return { state: 'error', message: 'Phản hồi biểu đồ không đúng cấu trúc API.', items: [] };
+    }
+    const items = [];
+    for (const item of payload.items) {
+      if (!item || (item.key !== null && typeof item.key !== 'string') || typeof item.count !== 'number' || !Number.isFinite(item.count)) {
+        return { state: 'error', message: 'Phản hồi biểu đồ không đúng cấu trúc API.', items: [] };
+      }
+      items.push({ key: item.key, label: item.key === null ? '—' : item.key, count: item.count });
+    }
+    return { state: items.length ? 'ready' : 'empty', items };
+  }
+
+  function createSvgNode(name, attributes = {}, text) {
+    const node = document.createElementNS('http://www.w3.org/2000/svg', name);
+    for (const [key, value] of Object.entries(attributes)) node.setAttribute(key, String(value));
+    if (text !== undefined) node.textContent = String(text);
+    return node;
+  }
+
+  function appendSvgText(svg, x, y, label, attributes = {}) {
+    svg.append(createSvgNode('text', { x, y, ...attributes }, label));
+  }
+
+  function drawDailyChart(container, items) {
+    const width = 840;
+    const height = 320;
+    const margin = { top: 18, right: 16, bottom: 76, left: 50 };
+    const plotWidth = width - margin.left - margin.right;
+    const plotHeight = height - margin.top - margin.bottom;
+    const maximum = Math.max(1, ...items.map((item) => item.count));
+    const svg = createSvgNode('svg', { viewBox: `0 0 ${width} ${height}`, role: 'img', 'aria-label': 'Biểu đồ số sự kiện theo ngày UTC' });
+    const ticks = [...new Set([0, Math.round(maximum / 4), Math.round(maximum / 2), Math.round(maximum * 3 / 4), maximum])];
+    for (const value of ticks) {
+      const y = margin.top + plotHeight - plotHeight * value / maximum;
+      svg.append(createSvgNode('line', { x1: margin.left, y1: y, x2: width - margin.right, y2: y, class: 'chart-grid-line' }));
+      appendSvgText(svg, margin.left - 8, y + 4, value.toLocaleString('vi-VN'), { class: 'chart-axis-label', 'text-anchor': 'end' });
+    }
+    const slot = items.length ? plotWidth / items.length : plotWidth;
+    items.forEach((item, index) => {
+      const barWidth = Math.max(2, Math.min(24, slot * 0.62));
+      const barHeight = plotHeight * item.count / maximum;
+      const x = margin.left + slot * index + (slot - barWidth) / 2;
+      const y = margin.top + plotHeight - barHeight;
+      const bar = createSvgNode('rect', { x, y, width: barWidth, height: barHeight, rx: 3, class: 'chart-bar' });
+      const originalKey = item.key === null ? 'null' : String(item.key);
+      bar.append(createSvgNode('title', {}, `${originalKey}: ${item.count}`));
+      svg.append(bar);
+      const labelX = x + barWidth / 2;
+      const labelY = height - margin.bottom + 17;
+      const label = createSvgNode('text', { x: labelX, y: labelY, class: 'chart-axis-label', 'text-anchor': 'end', transform: `rotate(-45 ${labelX} ${labelY})` }, formatUtcDayLabel(item.key));
+      label.append(createSvgNode('title', {}, originalKey));
+      svg.append(label);
+    });
+    container.replaceChildren(svg);
+  }
+
+  function drawCategoryChart(container, items, groupBy) {
+    const width = 840;
+    const labelWidth = 190;
+    const rightSpace = 52;
+    const rowHeight = 38;
+    const top = 14;
+    const height = Math.max(130, top + items.length * rowHeight + 30);
+    const plotWidth = width - labelWidth - rightSpace;
+    const maximum = Math.max(1, ...items.map((item) => item.count));
+    const svg = createSvgNode('svg', { viewBox: `0 0 ${width} ${height}`, role: 'img', 'aria-label': groupBy === 'vehicleType' ? 'Biểu đồ số sự kiện theo loại xe' : 'Biểu đồ số sự kiện theo trạng thái review' });
+    const reviewLabels = { PENDING_REVIEW: 'Chờ xác minh', VERIFIED_CROSSING: 'Đã xác minh', REJECTED_CANDIDATE: 'Đã từ chối' };
+    items.forEach((item, index) => {
+      const y = top + index * rowHeight;
+      const label = groupBy === 'reviewStatus' ? reviewLabels[item.label] || item.label : item.label;
+      const axisLabel = createSvgNode('text', { x: labelWidth - 12, y: y + 17, class: 'chart-axis-label chart-category-label', 'text-anchor': 'end' }, label);
+      axisLabel.append(createSvgNode('title', {}, item.key === null ? 'null' : item.key));
+      svg.append(axisLabel);
+      const barWidth = plotWidth * item.count / maximum;
+      const bar = createSvgNode('rect', { x: labelWidth, y: y + 3, width: barWidth, height: 20, rx: 4, class: groupBy === 'reviewStatus' ? 'chart-bar chart-bar-review' : 'chart-bar' });
+      bar.append(createSvgNode('title', {}, `${item.label}: ${item.count}`));
+      svg.append(bar);
+      appendSvgText(svg, labelWidth + barWidth + 8, y + 18, item.count.toLocaleString('vi-VN'), { class: 'chart-value-label' });
+    });
+    container.replaceChildren(svg);
+  }
+
+  function dashboardMetric(label, value, note, tone = 'status-neutral') {
+    const card = make('article', 'kpi-card');
+    card.append(make('span', 'kpi-label', label), make('strong', 'kpi-value mono', value), make('span', `kpi-note ${tone}`, note));
+    return card;
+  }
+
+  function dashboardStatusLabel(status) {
+    const labels = {
+      PENDING_REVIEW: 'Chờ xác minh',
+      VERIFIED_CROSSING: 'Đã xác minh',
+      REJECTED_CANDIDATE: 'Đã từ chối',
+      PENDING: 'Đang chờ',
+      PROCESSING: 'Đang xử lý',
+      COMPLETED: 'Hoàn tất',
+      FAILED: 'Thất bại',
+    };
+    return labels[status] || status;
+  }
+
+  function renderDashboardOverview(container, data) {
+    const review = data && data.events && data.events.byReviewStatus;
+    const jobs = data && data.jobs && data.jobs.byStatus;
+    const cameras = data && data.cameras;
+    const cameraStatuses = cameras && cameras.byStatus;
+    const cameraCount = (status) => typeof (cameraStatuses && cameraStatuses[status]) === 'number'
+      ? cameraStatuses[status].toLocaleString('vi-VN')
+      : '—';
+    const metrics = [
+      dashboardMetric('TỔNG SỰ KIỆN', typeof (data && data.events && data.events.total) === 'number' ? data.events.total.toLocaleString('vi-VN') : '—', 'Ứng viên phát hiện'),
+      dashboardMetric('CHỜ XÁC MINH', typeof (review && review.PENDING_REVIEW) === 'number' ? review.PENDING_REVIEW.toLocaleString('vi-VN') : '—', dashboardStatusLabel('PENDING_REVIEW'), 'status-yellow'),
+      dashboardMetric('ĐÃ XÁC MINH', typeof (review && review.VERIFIED_CROSSING) === 'number' ? review.VERIFIED_CROSSING.toLocaleString('vi-VN') : '—', dashboardStatusLabel('VERIFIED_CROSSING'), 'status-green'),
+      dashboardMetric('ĐÃ TỪ CHỐI', typeof (review && review.REJECTED_CANDIDATE) === 'number' ? review.REJECTED_CANDIDATE.toLocaleString('vi-VN') : '—', dashboardStatusLabel('REJECTED_CANDIDATE'), 'status-red'),
+      dashboardMetric('TỔNG JOB', typeof (data && data.jobs && data.jobs.total) === 'number' ? data.jobs.total.toLocaleString('vi-VN') : '—', 'Tiến trình xử lý'),
+      dashboardMetric('JOB ĐANG CHỜ', typeof (jobs && jobs.PENDING) === 'number' ? jobs.PENDING.toLocaleString('vi-VN') : '—', dashboardStatusLabel('PENDING'), 'status-yellow'),
+      dashboardMetric('JOB ĐANG XỬ LÝ', typeof (jobs && jobs.PROCESSING) === 'number' ? jobs.PROCESSING.toLocaleString('vi-VN') : '—', dashboardStatusLabel('PROCESSING'), 'status-yellow'),
+      dashboardMetric('JOB HOÀN TẤT', typeof (jobs && jobs.COMPLETED) === 'number' ? jobs.COMPLETED.toLocaleString('vi-VN') : '—', dashboardStatusLabel('COMPLETED'), 'status-green'),
+      dashboardMetric('JOB THẤT BẠI', typeof (jobs && jobs.FAILED) === 'number' ? jobs.FAILED.toLocaleString('vi-VN') : '—', dashboardStatusLabel('FAILED'), 'status-red'),
+      dashboardMetric('TỔNG VIDEO', typeof (data && data.videos && data.videos.total) === 'number' ? data.videos.total.toLocaleString('vi-VN') : '—', 'Video đã tải lên'),
+      dashboardMetric('CAMERA', typeof (cameras && cameras.total) === 'number' ? cameras.total.toLocaleString('vi-VN') : '—', `Đang hoạt động ${cameraCount('ACTIVE')} · Không hoạt động ${cameraCount('INACTIVE')} · Bảo trì ${cameraCount('MAINTENANCE')}`),
+    ];
+    container.replaceChildren(...metrics);
+    if (data.events.total === 0) container.append(make('p', 'kpi-empty-note', 'API hiện chưa có sự kiện.'));
+  }
+
+  function isDashboardOverview(data) {
+    const counts = [
+      data && data.events && data.events.total,
+      data && data.events && data.events.byReviewStatus && data.events.byReviewStatus.PENDING_REVIEW,
+      data && data.events && data.events.byReviewStatus && data.events.byReviewStatus.VERIFIED_CROSSING,
+      data && data.events && data.events.byReviewStatus && data.events.byReviewStatus.REJECTED_CANDIDATE,
+      data && data.jobs && data.jobs.total,
+      data && data.jobs && data.jobs.byStatus && data.jobs.byStatus.PENDING,
+      data && data.jobs && data.jobs.byStatus && data.jobs.byStatus.PROCESSING,
+      data && data.jobs && data.jobs.byStatus && data.jobs.byStatus.COMPLETED,
+      data && data.jobs && data.jobs.byStatus && data.jobs.byStatus.FAILED,
+    ];
+    return counts.every((value) => typeof value === 'number' && Number.isFinite(value) && value >= 0);
+  }
+
+  function initDashboard() {
+    const kpis = document.getElementById('dashboard-kpis');
+    const dateForm = document.getElementById('dashboard-date-filter');
+    const eventsBody = document.getElementById('dashboard-events-body');
+    const eventsFeedback = document.getElementById('dashboard-events-feedback');
+    const charts = [
+      { groupBy: 'day', container: document.getElementById('chart-day') },
+      { groupBy: 'vehicleType', container: document.getElementById('chart-vehicle') },
+      { groupBy: 'reviewStatus', container: document.getElementById('chart-review') },
+    ];
+    let dateRange = { from: '', to: '' };
+
+    async function loadOverview() {
+      kpis.replaceChildren();
+      addFeedback(kpis, 'Đang tải chỉ số', 'Đang lấy số liệu tổng quan từ API.');
+      try {
+        const data = await ApiClient.getJson('/stats/overview');
+        if (!isDashboardOverview(data)) throw new Error('Phản hồi overview không đúng cấu trúc API.');
+        renderDashboardOverview(kpis, data);
+      } catch (error) {
+        const details = errorMessage(error);
+        addFeedback(kpis, 'Không tải được chỉ số', `${details.message}${details.statusCode === 401 || details.statusCode === 403 ? ' Vui lòng nhập internal token.' : ''}`, 'error', details.statusCode, loadOverview);
+      }
+    }
+
+    async function loadChart(chart) {
+      chart.container.replaceChildren();
+      addFeedback(chart.container, 'Đang tải biểu đồ', 'Đang lấy dữ liệu sự kiện từ API.');
+      try {
+        const url = dashboardStatsPath(chart.groupBy, dateRange.from, dateRange.to);
+        const payload = await ApiClient.getJson(url);
+        const model = dashboardChartModel(payload, chart.groupBy);
+        if (model.state === 'error') { addFeedback(chart.container, 'Không tải được biểu đồ', model.message, 'error'); return; }
+        if (model.state === 'empty') { addFeedback(chart.container, 'Chưa có dữ liệu', 'API không trả về sự kiện trong khoảng đã chọn.'); return; }
+        if (chart.groupBy === 'day') drawDailyChart(chart.container, model.items);
+        else drawCategoryChart(chart.container, model.items, chart.groupBy);
+      } catch (error) {
+        const details = errorMessage(error);
+        addFeedback(chart.container, 'Không tải được biểu đồ', `${details.message}${details.statusCode === 401 || details.statusCode === 403 ? ' Vui lòng nhập internal token.' : ''}`, 'error', details.statusCode, () => loadChart(chart));
+      }
+    }
+
+    async function loadRecentEvents() {
+      eventsBody.replaceChildren();
+      addFeedback(eventsFeedback, 'Đang tải sự kiện', 'Đang lấy 5 sự kiện mới nhất từ API.');
+      try {
+        const result = await ApiClient.getJson('/events?limit=5');
+        const events = Array.isArray(result && result.data) ? result.data : [];
+        eventsBody.replaceChildren(...events.map((event) => {
+          const row = make('tr');
+          const idCell = make('td');
+          const link = make('a', 'event-link mono', event.id || '—');
+          link.href = `violation.html?id=${encodeURIComponent(event.id || '')}`;
+          link.title = event.id || '';
+          idCell.append(link);
+          const vehicle = make('td', '', event.vehicleType || '—');
+          const plate = make('td');
+          appendPlate(plate, event);
+          const confidence = make('td');
+          confidence.append(confidenceValue(event.confidence));
+          const review = make('td');
+          review.append(statusBadge(event.reviewStatus));
+          row.append(idCell, vehicle, plate, confidence, review);
+          return row;
+        }));
+        eventsFeedback.replaceChildren();
+        if (!events.length) addFeedback(eventsFeedback, 'Chưa có sự kiện', 'API chưa trả về sự kiện nào.');
+      } catch (error) {
+        const details = errorMessage(error);
+        addFeedback(eventsFeedback, 'Không tải được sự kiện', `${details.message}${details.statusCode === 401 || details.statusCode === 403 ? ' Vui lòng nhập internal token.' : ''}`, 'error', details.statusCode, loadRecentEvents);
+      }
+    }
+
+    function loadAll() {
+      loadOverview();
+      charts.forEach(loadChart);
+      loadRecentEvents();
+    }
+
+    dateForm.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const values = new FormData(dateForm);
+      dateRange = {
+        from: dashboardDateBound(String(values.get('from') || ''), false),
+        to: dashboardDateBound(String(values.get('to') || ''), true),
+      };
+      charts.forEach(loadChart);
+    });
+    document.getElementById('dashboard-clear-dates').addEventListener('click', () => {
+      dateForm.reset();
+      dateRange = { from: '', to: '' };
+      charts.forEach(loadChart);
+    });
+    document.getElementById('dashboard-refresh').addEventListener('click', loadAll);
+    loadAll();
+  }
+
   function initList() {
     const form = document.getElementById('filters-form');
     const body = document.getElementById('events-body');
@@ -913,6 +1173,7 @@
   if (document.body.dataset.page === 'violations') initList();
   if (document.body.dataset.page === 'violation') initDetail();
   if (document.body.dataset.page === 'jobs') initJobs();
+  if (document.body.dataset.page === 'dashboard') initDashboard();
   window.addEventListener('pagehide', () => {
     for (const url of activeObjectUrls) URL.revokeObjectURL(url);
     activeObjectUrls.clear();
