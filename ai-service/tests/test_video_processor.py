@@ -1,4 +1,5 @@
 import json
+import logging
 from dataclasses import replace
 from pathlib import Path
 
@@ -10,7 +11,14 @@ from traffic_ai.config import load_config
 from traffic_ai.processing.video_processor import VideoProcessor
 from traffic_ai.ocr.plate_detector import PlateCrop
 from traffic_ai.ocr.plate_validator import PlateValidator
-from traffic_ai.schemas import BoundingBox, PlateDetection, ProcessingStatus, TrackedVehicle, VehicleDetection
+from traffic_ai.schemas import (
+    BoundingBox,
+    PlateCropReason,
+    PlateDetection,
+    ProcessingStatus,
+    TrackedVehicle,
+    VehicleDetection,
+)
 
 
 class FakeTracker:
@@ -84,6 +92,11 @@ class CrossingTracker:
 class NoPlateDetector:
     def detect(self, frame, bbox):
         return []
+
+
+class RaisingPlateDetector:
+    def detect(self, frame, bbox):
+        raise RuntimeError("private detector detail")
 
 
 class StaticPlateDetector:
@@ -188,6 +201,9 @@ def test_headless_pipeline_writes_json_and_evidence(monkeypatch, tmp_path: Path)
     assert result.summary.total_candidate_events == 1
     assert result.events[0].plate_number is None
     assert result.events[0].plate_crop_path is None
+    assert result.events[0].plate_crop_reason is PlateCropReason.NO_PLATE_DETECTED
+    payload = json.loads((output_path / "results.json").read_text(encoding="utf-8"))
+    assert payload["events"][0]["plate_crop_reason"] == "NO_PLATE_DETECTED"
     assert (output_path / "results.json").is_file()
     assert (output_path / result.events[0].evidence_path).is_file()
     assert fake_capture.released is True
@@ -205,13 +221,14 @@ def test_plate_crop_is_written_and_serialized_when_ocr_returns_no_text(monkeypat
 
     event = result.events[0]
     payload = json.loads((output_dir / "results.json").read_text(encoding="utf-8"))
-    assert result.summary.schema_version == "1.1"
-    assert payload["schema_version"] == "1.1"
-    assert payload["summary"]["schema_version"] == "1.1"
-    assert payload["events"][0]["schema_version"] == "1.1"
+    assert result.summary.schema_version == "1.2"
+    assert payload["schema_version"] == "1.2"
+    assert payload["summary"]["schema_version"] == "1.2"
+    assert payload["events"][0]["schema_version"] == "1.2"
     assert event.plate_number is None
     assert event.plate_crop_path == f"evidence/{event.event_id}_plate.jpg"
     assert payload["events"][0]["plate_crop_path"] == event.plate_crop_path
+    assert "plate_crop_reason" not in payload["events"][0]
     assert cv2.imread(str(output_dir / event.plate_crop_path)).shape[:2] == (24, 48)
     assert recognizer.calls == 1
 
@@ -246,7 +263,10 @@ def test_plate_crop_is_kept_when_ocr_raises(monkeypatch, tmp_path: Path) -> None
     assert (output_dir / event.plate_crop_path).is_file()
 
 
-def test_too_small_plate_crop_is_not_saved_but_ocr_behavior_is_unchanged(monkeypatch, tmp_path: Path) -> None:
+def test_too_small_plate_crop_is_not_saved_but_ocr_behavior_is_unchanged(
+    monkeypatch, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.INFO)
     recognizer = EmptyRecognizer()
     config = load_config("configs/default.yaml")
     config = replace(
@@ -261,8 +281,30 @@ def test_too_small_plate_crop_is_not_saved_but_ocr_behavior_is_unchanged(monkeyp
         config=config,
     )
     assert result.events[0].plate_crop_path is None
+    assert result.events[0].plate_crop_reason is PlateCropReason.TOO_SMALL
+    payload = json.loads((output_dir / "results.json").read_text(encoding="utf-8"))
+    assert payload["events"][0]["plate_crop_reason"] == "TOO_SMALL"
+    assert "job_id=job-test track_id=4 width=48 height=20" in caplog.text
     assert recognizer.calls == 1
     assert not list((output_dir / "evidence").glob("*_plate.jpg"))
+
+
+def test_detector_error_reason_logs_only_identifiers_and_exception_type(
+    monkeypatch, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.WARNING)
+    result, output_dir = run_processor(
+        monkeypatch,
+        tmp_path,
+        detector=RaisingPlateDetector(),
+        recognizer=EmptyRecognizer(),
+    )
+    assert result.events[0].plate_crop_path is None
+    assert result.events[0].plate_crop_reason is PlateCropReason.DETECTOR_ERROR
+    payload = json.loads((output_dir / "results.json").read_text(encoding="utf-8"))
+    assert payload["events"][0]["plate_crop_reason"] == "DETECTOR_ERROR"
+    assert "job_id=job-test track_id=4 exception_type=RuntimeError" in caplog.text
+    assert "private detector detail" not in caplog.text
 
 
 def test_multiple_events_in_one_frame_get_distinct_crop_files(monkeypatch, tmp_path: Path) -> None:

@@ -173,11 +173,11 @@ Event mẫu:
   "crossing_direction": "positive_to_negative",
   "evidence_path": "evidence/e7a26411-6d09-4a64-bf99-773a61617a6f.jpg",
   "plate_crop_path": "evidence/e7a26411-6d09-4a64-bf99-773a61617a6f_plate.jpg",
-  "schema_version": "1.1"
+  "schema_version": "1.2"
 }
 ```
 
-Root, `summary` và mọi event dùng `schema_version: "1.1"`. `plate_crop_path` là đường dẫn tương đối hoặc `null`: service lưu crop có confidence detector cao nhất (cũng là crop đưa vào OCR), kể cả khi OCR không tìm được chữ hoặc ném exception. Nếu detector không tìm thấy biển hoặc cạnh crop nhỏ hơn `plate_detection.min_crop_size`, trường này là `null`. Ảnh crop được ghi JPEG chất lượng 95, không resize.
+Writer hiện dùng `schema_version: "1.2"` ở root, `summary` và mọi event. Backend vẫn nhận payload cũ `1.0` và `1.1`. `plate_crop_path` là đường dẫn tương đối hoặc `null`: service lưu crop có confidence detector cao nhất (cũng là crop đưa vào OCR), kể cả khi OCR không tìm được chữ hoặc ném exception. Nếu không có crop, schema `1.2` có thể thêm `plate_crop_reason`: `NO_PLATE_DETECTED` khi không có candidate; `DETECTOR_ERROR` khi plate detector ném exception; hoặc `TOO_SMALL` khi cạnh crop nhỏ hơn `plate_detection.min_crop_size`. Field này chỉ xuất hiện khi `plate_crop_path` là `null`; trường hợp `TOO_SMALL`, log kèm kích thước crop thật, job ID và track ID. Ảnh crop được ghi JPEG chất lượng 95, không resize.
 
 Khi OCR không đủ tin cậy, `plate_number` là `null`; raw text/confidence được giữ nếu có. Service không tạo giả biển số. Ảnh crop biển số có thể chứa dữ liệu cá nhân; cần kiểm soát quyền truy cập, lưu trữ và thời hạn giữ phù hợp.
 

@@ -53,6 +53,35 @@ describe('AiResultImportService', () => {
     }));
   });
 
+  it('lưu plate_crop_reason trong rawPayload và vẫn import payload cũ không có field này', async () => {
+    const { prisma, storage, tx } = createDependencies();
+    const service = new AiResultImportService(prisma, storage);
+    const current = makeAiResult();
+    current.schema_version = '1.2';
+    current.summary.schema_version = '1.2';
+    current.events[0].schema_version = '1.2';
+    Object.assign(current.events[0], { plate_crop_path: null, plate_crop_reason: 'DETECTOR_ERROR' });
+
+    await service.import(JOB_ID, current, '/trusted/results');
+    expect(tx.detectionEvent.upsert).toHaveBeenLastCalledWith(expect.objectContaining({
+      create: expect.objectContaining({
+        rawPayload: expect.objectContaining({ plate_crop_reason: 'DETECTOR_ERROR' }),
+      }),
+    }));
+
+    const legacy = makeAiResult();
+    legacy.schema_version = '1.1';
+    legacy.summary.schema_version = '1.1';
+    legacy.events[0].schema_version = '1.1';
+    Object.assign(legacy.events[0], { plate_crop_path: null });
+    await service.import(JOB_ID, legacy, '/trusted/results');
+    expect(tx.detectionEvent.upsert).toHaveBeenLastCalledWith(expect.objectContaining({
+      create: expect.objectContaining({
+        rawPayload: expect.not.objectContaining({ plate_crop_reason: expect.anything() }),
+      }),
+    }));
+  });
+
   it('cleanup evidence khi database transaction rollback', async () => {
     const { prisma, storage } = createDependencies(true);
     const service = new AiResultImportService(prisma, storage);

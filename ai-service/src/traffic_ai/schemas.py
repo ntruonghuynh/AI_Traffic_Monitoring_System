@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import json
 import math
-from dataclasses import asdict, dataclass, field, is_dataclass
+from dataclasses import dataclass, field, fields, is_dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any
 
 
-SCHEMA_VERSION = "1.1"
+SCHEMA_VERSION = "1.2"
 
 
 class EventType(str, Enum):
@@ -20,6 +20,12 @@ class EventType(str, Enum):
 
 class EventStatus(str, Enum):
     PENDING_REVIEW = "PENDING_REVIEW"
+
+
+class PlateCropReason(str, Enum):
+    TOO_SMALL = "TOO_SMALL"
+    NO_PLATE_DETECTED = "NO_PLATE_DETECTED"
+    DETECTOR_ERROR = "DETECTOR_ERROR"
 
 
 class ProcessingStatus(str, Enum):
@@ -34,7 +40,14 @@ def _serialize(value: Any) -> Any:
     if isinstance(value, (datetime, Path)):
         return value.isoformat() if isinstance(value, datetime) else value.as_posix()
     if is_dataclass(value):
-        return {key: _serialize(item) for key, item in asdict(value).items()}
+        omit_crop_reason = isinstance(value, LineCrossingEvent) and (
+            value.plate_crop_path is not None or value.plate_crop_reason is None
+        )
+        return {
+            item.name: _serialize(getattr(value, item.name))
+            for item in fields(value)
+            if not (omit_crop_reason and item.name == "plate_crop_reason")
+        }
     if isinstance(value, dict):
         return {str(key): _serialize(item) for key, item in value.items()}
     if isinstance(value, (list, tuple)):
@@ -165,6 +178,7 @@ class LineCrossingEvent(JsonSerializable):
     plate_confidence: float | None = None
     evidence_path: str | None = None
     plate_crop_path: str | None = None
+    plate_crop_reason: PlateCropReason | None = None
     schema_version: str = SCHEMA_VERSION
 
 

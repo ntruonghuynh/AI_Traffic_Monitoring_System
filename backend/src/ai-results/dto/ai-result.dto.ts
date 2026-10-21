@@ -16,7 +16,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 
-export const SUPPORTED_AI_SCHEMA_VERSIONS = ['1.0', '1.1'] as const;
+export const SUPPORTED_AI_SCHEMA_VERSIONS = ['1.0', '1.1', '1.2'] as const;
 
 export enum AiProcessingStatus {
   Running = 'RUNNING',
@@ -172,6 +172,10 @@ export class AiEventDto {
   @IsString()
   @MaxLength(500)
   plate_crop_path?: string | null;
+
+  @IsOptional()
+  @IsIn(['TOO_SMALL', 'NO_PLATE_DETECTED', 'DETECTOR_ERROR'])
+  plate_crop_reason?: 'TOO_SMALL' | 'NO_PLATE_DETECTED' | 'DETECTOR_ERROR';
 
   @IsIn(SUPPORTED_AI_SCHEMA_VERSIONS)
   schema_version!: string;
