@@ -14,6 +14,8 @@
     check: [['path', 'm5 12 4 4L19 6']],
     close: [['path', 'm6 6 12 12M18 6 6 18']],
     image: [['rect', 3, 3, 18, 18, 2], ['circle', 8.5, 8.5, 1.5], ['path', 'm21 15-5-5L5 21']],
+    edit: [['path', 'm12 20 8-8'], ['path', 'm16 5 3 3'], ['path', 'm4 20 4-.8L19 8a2.1 2.1 0 0 0-3-3L5 16l-1 4Z']],
+    trash: [['path', 'M4 7h16'], ['path', 'M10 11v6M14 11v6'], ['path', 'm5 7 1 13h12l1-13M9 7V4h6v3']],
   };
 
   function renderIcons(root = document) {
@@ -46,15 +48,45 @@
     return node;
   }
 
+  function toggleButtonLoading(button, isLoading) {
+    const classes = new Set(String(button.className || '').split(/\s+/).filter(Boolean));
+    if (isLoading) classes.add('is-loading');
+    else classes.delete('is-loading');
+    button.className = [...classes].join(' ');
+  }
+
+  function emptyStateIcon() {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 32 32');
+    svg.setAttribute('class', 'empty-state-icon');
+    svg.setAttribute('aria-hidden', 'true');
+    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    circle.setAttribute('cx', '16'); circle.setAttribute('cy', '16'); circle.setAttribute('r', '11');
+    circle.setAttribute('fill', 'none'); circle.setAttribute('stroke', 'currentColor'); circle.setAttribute('stroke-width', '1.8');
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', 'M11 16h10M16 11v10'); path.setAttribute('fill', 'none');
+    path.setAttribute('stroke', 'currentColor'); path.setAttribute('stroke-linecap', 'round'); path.setAttribute('stroke-width', '1.8');
+    svg.append(circle, path);
+    return svg;
+  }
+
   function addFeedback(container, title, message, type = 'info', statusCode = null, retry) {
     container.replaceChildren();
     const evidenceAuthError = container.id === 'evidence-content' && type === 'error' && (statusCode === 401 || statusCode === 403);
-    const box = make('div', `feedback-box${type === 'error' ? ' is-error' : ''}${evidenceAuthError ? ' evidence-auth-error' : ''}`);
+    const isLoading = type === 'info' && title.startsWith('Đang tải');
+    const isEmpty = type === 'info' && /^(Chưa có|Không có)/.test(title);
+    const box = make('div', `feedback-box${type === 'error' ? ' is-error' : ''}${evidenceAuthError ? ' evidence-auth-error' : ''}${isLoading ? ' is-loading' : ''}${isEmpty ? ' is-empty-state' : ''}`);
+    if (isEmpty) box.append(emptyStateIcon());
     const copy = make('div');
     if (title) copy.append(make('strong', '', title));
     const statusPrefix = statusCode ? `HTTP ${statusCode} · ` : '';
     copy.append(make('p', '', `${statusPrefix}${message}`));
     box.append(copy);
+    if (isLoading) {
+      const skeleton = make('span', 'feedback-skeleton');
+      skeleton.setAttribute('aria-hidden', 'true');
+      box.append(skeleton);
+    }
     if (retry) {
       const button = make('button', 'button button-secondary button-small', 'Thử lại');
       button.type = 'button'; button.addEventListener('click', retry); box.append(button);
@@ -291,7 +323,7 @@
       axisLabel.append(createSvgNode('title', {}, item.key === null ? 'null' : item.key));
       svg.append(axisLabel);
       const barWidth = plotWidth * item.count / maximum;
-      const bar = createSvgNode('rect', { x: labelWidth, y: y + 3, width: barWidth, height: 20, rx: 4, class: groupBy === 'reviewStatus' ? 'chart-bar chart-bar-review' : 'chart-bar' });
+      const bar = createSvgNode('rect', { x: labelWidth, y: y + 3, width: barWidth, height: 20, rx: 4, class: `chart-bar chart-bar-category-${index % 4}` });
       bar.append(createSvgNode('title', {}, `${item.label}: ${item.count}`));
       svg.append(bar);
       appendSvgText(svg, labelWidth + barWidth + 8, y + 18, item.count.toLocaleString('vi-VN'), { class: 'chart-value-label' });
@@ -299,10 +331,36 @@
     container.replaceChildren(svg);
   }
 
-  function dashboardMetric(label, value, note, tone = 'status-neutral') {
-    const card = make('article', 'kpi-card');
-    card.append(make('span', 'kpi-label', label), make('strong', 'kpi-value mono', value), make('span', `kpi-note ${tone}`, note));
+  function dashboardMetric(label, value, note, tone = 'status-neutral', icon = 'grid', color = 'blue', prominent = false) {
+    const card = make('article', prominent ? 'kpi-card kpi-card-primary' : 'kpi-card');
+    const heading = make('div', 'kpi-card-heading');
+    const iconChip = make('span', `kpi-icon-chip is-${color}`);
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24'); svg.setAttribute('aria-hidden', 'true');
+    const metricIcons = {
+      list: [['path', 'M9 6h11M9 12h11M9 18h11'], ['circle', 4, 6, 1], ['circle', 4, 12, 1], ['circle', 4, 18, 1]],
+      info: [['circle', 12, 12, 9], ['path', 'M12 11v5M12 8h.01']], check: [['path', 'm5 12 4 4L19 6']],
+      close: [['path', 'm6 6 12 12M18 6 6 18']], settings: [['circle', 12, 12, 3]],
+      refresh: [['path', 'M20 7v5h-5'], ['path', 'M4 17v-5h5']], video: [['rect', 3, 5, 13, 14, 2], ['path', 'm16 10 5-3v10l-5-3z']],
+      camera: [['path', 'M4 7h3l2-2h6l2 2h3a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2Z'], ['circle', 12, 13, 3]],
+    };
+    for (const [type, ...args] of metricIcons[icon] || metricIcons.list) {
+      const node = document.createElementNS('http://www.w3.org/2000/svg', type);
+      if (type === 'path') node.setAttribute('d', args[0]);
+      if (type === 'rect') { node.setAttribute('x', args[0]); node.setAttribute('y', args[1]); node.setAttribute('width', args[2]); node.setAttribute('height', args[3]); if (args[4]) node.setAttribute('rx', args[4]); }
+      if (type === 'circle') { node.setAttribute('cx', args[0]); node.setAttribute('cy', args[1]); node.setAttribute('r', args[2]); }
+      svg.append(node);
+    }
+    iconChip.append(svg); heading.append(iconChip, make('span', 'kpi-label', label));
+    card.append(heading, make('strong', 'kpi-value mono', value), make('span', `kpi-note ${tone}`, note));
     return card;
+  }
+
+  function dashboardMetricGroup(title, cards, className = '') {
+    const group = make('section', `kpi-group ${className}`.trim());
+    group.append(make('h3', 'kpi-group-title', title));
+    const grid = make('div', 'kpi-group-grid'); grid.append(...cards); group.append(grid);
+    return group;
   }
 
   function dashboardStatusLabel(status) {
@@ -326,20 +384,25 @@
     const cameraCount = (status) => typeof (cameraStatuses && cameraStatuses[status]) === 'number'
       ? cameraStatuses[status].toLocaleString('vi-VN')
       : '—';
-    const metrics = [
-      dashboardMetric('TỔNG SỰ KIỆN', typeof (data && data.events && data.events.total) === 'number' ? data.events.total.toLocaleString('vi-VN') : '—', 'Ứng viên phát hiện'),
-      dashboardMetric('CHỜ XÁC MINH', typeof (review && review.PENDING_REVIEW) === 'number' ? review.PENDING_REVIEW.toLocaleString('vi-VN') : '—', dashboardStatusLabel('PENDING_REVIEW'), 'status-yellow'),
-      dashboardMetric('ĐÃ XÁC MINH', typeof (review && review.VERIFIED_CROSSING) === 'number' ? review.VERIFIED_CROSSING.toLocaleString('vi-VN') : '—', dashboardStatusLabel('VERIFIED_CROSSING'), 'status-green'),
-      dashboardMetric('ĐÃ TỪ CHỐI', typeof (review && review.REJECTED_CANDIDATE) === 'number' ? review.REJECTED_CANDIDATE.toLocaleString('vi-VN') : '—', dashboardStatusLabel('REJECTED_CANDIDATE'), 'status-red'),
-      dashboardMetric('TỔNG JOB', typeof (data && data.jobs && data.jobs.total) === 'number' ? data.jobs.total.toLocaleString('vi-VN') : '—', 'Tiến trình xử lý'),
-      dashboardMetric('JOB ĐANG CHỜ', typeof (jobs && jobs.PENDING) === 'number' ? jobs.PENDING.toLocaleString('vi-VN') : '—', dashboardStatusLabel('PENDING'), 'status-yellow'),
-      dashboardMetric('JOB ĐANG XỬ LÝ', typeof (jobs && jobs.PROCESSING) === 'number' ? jobs.PROCESSING.toLocaleString('vi-VN') : '—', dashboardStatusLabel('PROCESSING'), 'status-yellow'),
-      dashboardMetric('JOB HOÀN TẤT', typeof (jobs && jobs.COMPLETED) === 'number' ? jobs.COMPLETED.toLocaleString('vi-VN') : '—', dashboardStatusLabel('COMPLETED'), 'status-green'),
-      dashboardMetric('JOB THẤT BẠI', typeof (jobs && jobs.FAILED) === 'number' ? jobs.FAILED.toLocaleString('vi-VN') : '—', dashboardStatusLabel('FAILED'), 'status-red'),
-      dashboardMetric('TỔNG VIDEO', typeof (data && data.videos && data.videos.total) === 'number' ? data.videos.total.toLocaleString('vi-VN') : '—', 'Video đã tải lên'),
-      dashboardMetric('CAMERA', typeof (cameras && cameras.total) === 'number' ? cameras.total.toLocaleString('vi-VN') : '—', `Đang hoạt động ${cameraCount('ACTIVE')} · Không hoạt động ${cameraCount('INACTIVE')} · Bảo trì ${cameraCount('MAINTENANCE')}`),
-    ];
-    container.replaceChildren(...metrics);
+    const metric = (value) => typeof value === 'number' ? value.toLocaleString('vi-VN') : '—';
+    const eventsGroup = dashboardMetricGroup('Sự kiện', [
+      dashboardMetric('TỔNG SỰ KIỆN', metric(data && data.events && data.events.total), 'Ứng viên phát hiện', 'status-neutral', 'list', 'blue', true),
+      dashboardMetric('CHỜ XÁC MINH', metric(review && review.PENDING_REVIEW), dashboardStatusLabel('PENDING_REVIEW'), 'status-yellow', 'info', 'gold'),
+      dashboardMetric('ĐÃ XÁC MINH', metric(review && review.VERIFIED_CROSSING), dashboardStatusLabel('VERIFIED_CROSSING'), 'status-green', 'check', 'teal'),
+      dashboardMetric('ĐÃ TỪ CHỐI', metric(review && review.REJECTED_CANDIDATE), dashboardStatusLabel('REJECTED_CANDIDATE'), 'status-red', 'close', 'purple'),
+    ], 'kpi-group-events');
+    const jobsGroup = dashboardMetricGroup('Job', [
+      dashboardMetric('TỔNG JOB', metric(data && data.jobs && data.jobs.total), 'Tiến trình xử lý', 'status-neutral', 'settings', 'blue'),
+      dashboardMetric('JOB ĐANG CHỜ', metric(jobs && jobs.PENDING), dashboardStatusLabel('PENDING'), 'status-yellow', 'refresh', 'gold'),
+      dashboardMetric('JOB ĐANG XỬ LÝ', metric(jobs && jobs.PROCESSING), dashboardStatusLabel('PROCESSING'), 'status-yellow', 'video', 'teal'),
+      dashboardMetric('JOB HOÀN TẤT', metric(jobs && jobs.COMPLETED), dashboardStatusLabel('COMPLETED'), 'status-green', 'check', 'green'),
+      dashboardMetric('JOB THẤT BẠI', metric(jobs && jobs.FAILED), dashboardStatusLabel('FAILED'), 'status-red', 'close', 'purple'),
+    ], 'kpi-group-jobs');
+    const systemGroup = dashboardMetricGroup('Hệ thống', [
+      dashboardMetric('TỔNG VIDEO', metric(data && data.videos && data.videos.total), 'Video đã tải lên', 'status-neutral', 'video', 'teal'),
+      dashboardMetric('CAMERA', metric(cameras && cameras.total), `Hoạt động ${cameraCount('ACTIVE')} · Không hoạt động ${cameraCount('INACTIVE')} · Bảo trì ${cameraCount('MAINTENANCE')}`, 'status-neutral', 'camera', 'purple'),
+    ], 'kpi-group-system');
+    container.replaceChildren(eventsGroup, jobsGroup, systemGroup);
     if (data.events.total === 0) container.append(make('p', 'kpi-empty-note', 'API hiện chưa có sự kiện.'));
   }
 
@@ -469,6 +532,24 @@
     let limit = Number(size.value);
     let filters = {};
     let sequence = 0;
+    const chips = document.getElementById('active-filter-chips');
+    const filterLabels = { reviewStatus: 'Trạng thái', vehicleType: 'Loại xe', plateNumber: 'Biển số', minConfidence: 'Confidence ≥', from: 'Từ ngày', to: 'Đến ngày', hasPlate: 'Có biển số', cameraId: 'Camera', jobId: 'Job', videoId: 'Video' };
+
+    function renderFilterChips() {
+      if (!chips) return;
+      chips.replaceChildren();
+      Object.entries(filters).forEach(([key, value]) => {
+        const chip = make('span', 'filter-chip');
+        chip.append(make('span', '', `${filterLabels[key] || key}: ${value}`));
+        const remove = make('button', 'filter-chip-remove', '×'); remove.type = 'button'; remove.setAttribute('aria-label', `Bỏ bộ lọc ${filterLabels[key] || key}`);
+        remove.addEventListener('click', () => {
+          delete filters[key];
+          const field = form.elements.namedItem(key); if (field) field.value = '';
+          page = 1; renderFilterChips(); load();
+        });
+        chip.append(remove); chips.append(chip);
+      });
+    }
 
     const requestedJobId = new URLSearchParams(location.search).get('jobId');
     if (requestedJobId && form.elements.namedItem('jobId')) {
@@ -507,12 +588,14 @@
       }
     }
 
-    form.addEventListener('submit', (event) => { event.preventDefault(); filters = readFilters(form); page = 1; load(); });
-    document.getElementById('clear-filters').addEventListener('click', () => { form.reset(); filters = {}; page = 1; load(); });
+    form.addEventListener('submit', (event) => { event.preventDefault(); filters = readFilters(form); page = 1; renderFilterChips(); load(); });
+    form.addEventListener('keydown', (event) => { if (event.key === 'Enter' && event.target.matches('input')) { event.preventDefault(); form.requestSubmit(); } });
+    document.getElementById('clear-filters').addEventListener('click', () => { form.reset(); filters = {}; page = 1; renderFilterChips(); load(); });
     document.getElementById('refresh-list').addEventListener('click', load);
     previous.addEventListener('click', () => { if (page > 1) { page -= 1; load(); } });
     next.addEventListener('click', () => { page += 1; load(); });
     size.addEventListener('change', () => { limit = Number(size.value); page = 1; load(); });
+    renderFilterChips();
     load();
   }
 
@@ -590,7 +673,7 @@
     const frame = make('div', 'evidence-frame');
     const placeholder = make('div', 'evidence-placeholder', 'Đang tải ảnh bằng chứng…');
     frame.append(placeholder);
-    const open = make('button', 'evidence-open', 'Mở ảnh lớn'); open.type = 'button'; open.disabled = true;
+    const open = make('button', 'button button-secondary button-small evidence-open', 'Mở ảnh lớn'); open.type = 'button'; open.disabled = true;
     const dimensions = make('div', 'image-dimensions mono');
     const sizeWarning = make('p', 'image-size-warning', 'Ảnh nhỏ, OCR có thể không đọc được');
     sizeWarning.hidden = true;
@@ -700,10 +783,41 @@
     const reviewStatusBadge = document.getElementById('review-status-badge');
     const verify = document.getElementById('verify-event');
     const reject = document.getElementById('reject-event');
+    const reviewActions = verify.parentElement;
     const note = document.getElementById('review-note');
     const noteCount = document.getElementById('note-count');
     let eventRecord = null;
     let busy = false;
+    let pendingReviewStatus = null;
+    let reviewConfirmButton = null;
+
+    function restoreReviewActions() {
+      reviewActions.replaceChildren(verify, reject);
+    }
+
+    function cancelReviewConfirmation() {
+      pendingReviewStatus = null;
+      reviewConfirmButton = null;
+      restoreReviewActions();
+    }
+
+    function showReviewConfirmation(status) {
+      pendingReviewStatus = status;
+      const isVerify = status === 'VERIFIED_CROSSING';
+      const confirmation = make('div', 'review-confirmation');
+      const prompt = isVerify
+        ? 'Xác minh sự kiện này? Enter để xác nhận · Esc để huỷ'
+        : 'Từ chối ứng viên này? Enter để xác nhận · Esc để huỷ';
+      confirmation.append(make('span', 'review-confirmation-prompt', prompt));
+      const confirm = make('button', isVerify ? 'button button-primary button-small' : 'button button-danger button-small', 'Xác nhận');
+      confirm.type = 'button'; confirm.disabled = busy || !ApiClient.getToken();
+      confirm.addEventListener('click', () => { const selected = pendingReviewStatus; cancelReviewConfirmation(); submitReview(selected); });
+      const cancel = make('button', 'button button-secondary button-small', 'Huỷ');
+      cancel.type = 'button'; cancel.addEventListener('click', cancelReviewConfirmation);
+      confirmation.append(confirm, cancel);
+      reviewConfirmButton = confirm;
+      reviewActions.replaceChildren(confirmation);
+    }
 
     const tokenRequired = document.getElementById('review-token-required');
     function syncReviewAvailability() {
@@ -711,6 +825,7 @@
       verify.disabled = !eventRecord || busy || !hasToken;
       reject.disabled = !eventRecord || busy || !hasToken;
       tokenRequired.hidden = hasToken;
+      if (reviewConfirmButton) reviewConfirmButton.disabled = busy || !hasToken;
     }
     syncReviewAvailability();
     window.addEventListener('internal-token-change', syncReviewAvailability);
@@ -777,7 +892,7 @@
     async function submitReview(reviewStatus) {
       if (!eventRecord || busy) return;
       if (!ApiClient.getToken()) { setReviewFeedback('Vui lòng nhập và lưu internal token ở thanh trên trước khi gửi review.', 'error'); return; }
-      busy = true; syncReviewAvailability(); setReviewFeedback('Đang gửi quyết định review…', '');
+      busy = true; syncReviewAvailability(); toggleButtonLoading(reviewStatus === 'VERIFIED_CROSSING' ? verify : reject, true); setReviewFeedback('Đang gửi quyết định review…', '');
       try {
         const result = await ApiClient.patchJson(`/events/${encodeURIComponent(id)}/review`, { reviewStatus, note: note.value.trim() });
         eventRecord = { ...eventRecord, ...result };
@@ -787,11 +902,28 @@
       } catch (error) {
         const details = errorMessage(error);
         setReviewFeedback(`${details.statusCode ? `HTTP ${details.statusCode} · ` : ''}${details.message}${details.statusCode === 401 || details.statusCode === 403 ? ' Vui lòng kiểm tra internal token.' : ''}`, 'error');
-      } finally { busy = false; syncReviewAvailability(); }
+      } finally { toggleButtonLoading(verify, false); toggleButtonLoading(reject, false); busy = false; syncReviewAvailability(); }
     }
 
     verify.addEventListener('click', () => submitReview('VERIFIED_CROSSING'));
     reject.addEventListener('click', () => submitReview('REJECTED_CANDIDATE'));
+    document.addEventListener('keydown', (event) => {
+      if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+      const target = event.target;
+      const isElement = target && typeof target.matches === 'function';
+      const isTyping = isElement && (target.isContentEditable || target.matches('input, textarea, select, [role="textbox"]'));
+      if (event.key === 'Escape' && pendingReviewStatus) { event.preventDefault(); cancelReviewConfirmation(); return; }
+      if (isTyping) return;
+      if (pendingReviewStatus && event.key === 'Enter' && !(isElement && target.closest('.review-confirmation button'))) {
+        event.preventDefault();
+        const selected = pendingReviewStatus; cancelReviewConfirmation(); submitReview(selected);
+        return;
+      }
+      if (pendingReviewStatus) return;
+      if (isElement && target.matches('button')) return;
+      if (event.key.toLowerCase() === 'v' && !verify.disabled) { event.preventDefault(); showReviewConfirmation('VERIFIED_CROSSING'); }
+      if (event.key.toLowerCase() === 'r' && !reject.disabled) { event.preventDefault(); showReviewConfirmation('REJECTED_CANDIDATE'); }
+    });
     loadDetail();
   }
 
@@ -964,6 +1096,7 @@
           if (!ApiClient.getToken()) return;
           confirm.disabled = true;
           cancel.disabled = true;
+          toggleButtonLoading(confirm, true);
           confirm.textContent = 'Đang tạo…';
           try {
             await ApiClient.postJson('/jobs', { videoId: video.id });
@@ -1127,6 +1260,7 @@
       formData.append('file', file);
       if (cameraSelect.value) formData.append('cameraId', cameraSelect.value);
       uploadButton.disabled = true;
+      toggleButtonLoading(uploadButton, true);
       addFeedback(uploadFeedback, 'Đang tải video', 'Đang gửi tệp lên API.');
       try {
         const uploaded = await ApiClient.postMultipart('/videos/upload', formData);
@@ -1138,7 +1272,7 @@
       } catch (error) {
         const details = errorMessage(error);
         addFeedback(uploadFeedback, 'Không tải được video', apiFailureText(details), 'error', details.statusCode);
-      } finally { syncUploadAvailability(); }
+      } finally { toggleButtonLoading(uploadButton, false); syncUploadAvailability(); }
     });
 
     videoFilter.addEventListener('submit', (event) => {
@@ -1227,7 +1361,8 @@
       tokenHint.hidden = hasToken;
       body.querySelectorAll('[data-camera-write="true"]').forEach((button) => {
         button.disabled = !hasToken;
-        if (!hasToken) button.title = 'Cần internal token';
+        const label = button.getAttribute('aria-label') || button.textContent.trim();
+        button.title = hasToken ? label : `${label} · Cần internal token`;
       });
     }
     syncTokenAvailability();
@@ -1245,11 +1380,14 @@
     }
 
     function cameraActionButton(label, className, handler) {
-      const button = make('button', className, label);
+      const iconName = label === 'Sửa' ? 'edit' : label === 'Xóa' ? 'trash' : null;
+      const button = make('button', iconName ? 'btn-icon camera-icon-action' : className, iconName ? undefined : label);
       button.type = 'button';
       button.dataset.cameraWrite = 'true';
       button.disabled = !ApiClient.getToken();
-      if (button.disabled) button.title = 'Cần internal token';
+      button.setAttribute('aria-label', label);
+      button.title = button.disabled ? `${label} · Cần internal token` : label;
+      if (iconName) { const icon = make('span'); icon.setAttribute('data-icon', iconName); button.append(icon); renderIcons(button); }
       button.addEventListener('click', handler);
       return button;
     }
@@ -1319,10 +1457,12 @@
         const changes = cameraChangedFields(camera, edited);
         if (!Object.keys(changes).length) { load(); return; }
         save.disabled = true;
+        toggleButtonLoading(save, true);
         try {
           await ApiClient.patchJson(`/cameras/${encodeURIComponent(camera.id)}`, changes);
           await load();
         } catch (error) {
+          toggleButtonLoading(save, false);
           save.disabled = !ApiClient.getToken();
           addRowError(actionCell, error);
         }
@@ -1338,10 +1478,12 @@
       confirmation.append(make('span', 'camera-delete-note', 'Video thuộc camera này vẫn được giữ, chỉ bỏ liên kết camera'));
       const confirm = cameraActionButton('Xác nhận xóa', 'button button-danger button-small', async () => {
         confirm.disabled = true;
+        toggleButtonLoading(confirm, true);
         try {
           await ApiClient.deleteJson(`/cameras/${encodeURIComponent(camera.id)}`);
           await load();
         } catch (error) {
+          toggleButtonLoading(confirm, false);
           confirm.disabled = !ApiClient.getToken();
           addRowError(actionCell, error);
         }
@@ -1397,6 +1539,7 @@
       const validationError = validateCameraFields(payload);
       if (validationError) { addFeedback(createFeedback, 'Kiểm tra thông tin', validationError, 'error'); return; }
       createButton.disabled = true;
+      toggleButtonLoading(createButton, true);
       addFeedback(createFeedback, 'Đang thêm camera', 'Đang gửi thông tin đến API.');
       try {
         await ApiClient.postJson('/cameras', payload);
@@ -1407,7 +1550,7 @@
       } catch (error) {
         const details = errorMessage(error);
         addFeedback(createFeedback, 'Không thêm được camera', apiFailureText(details), 'error', details.statusCode);
-      } finally { syncTokenAvailability(); }
+      } finally { toggleButtonLoading(createButton, false); syncTokenAvailability(); }
     });
 
     filterForm.addEventListener('submit', (event) => {

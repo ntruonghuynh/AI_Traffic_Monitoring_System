@@ -4,7 +4,7 @@
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#F4F7FB">
   <title>Video &amp; Tiến trình · Traffic Monitor</title>
   <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet"><link rel="stylesheet" href="css/style.css?v=4">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet"><link rel="stylesheet" href="css/style.css?v=7">
 </head>
 <body data-page="jobs">
   <div class="app-shell">
@@ -21,7 +21,7 @@
       <div class="sidebar-foot"><span class="sidebar-foot-dot"></span><span>Quản lý video và tiến trình xử lý</span></div>
     </aside>
     <main class="main-area">
-      <header class="topbar"><div class="topbar-context"><span class="eyebrow">TRUNG TÂM ĐIỀU HÀNH</span><span class="topbar-separator">/</span><span>Video &amp; Tiến trình</span></div><div class="topbar-tools"><label class="token-control" for="token-field"><span class="token-label">TOKEN PHIÊN</span><input id="token-field" class="token-input" type="password" autocomplete="off" placeholder="Nhập internal token" aria-label="Internal token"></label><button class="button button-secondary button-small" id="save-token" type="button">Lưu token</button><div class="system-status" id="system-status" role="status" aria-live="polite"><span class="status-dot is-checking"></span><span class="system-label">Đang kiểm tra hệ thống</span></div></div></header>
+      <header class="topbar"><div class="topbar-context"><span class="eyebrow">KHÔNG GIAN LÀM VIỆC</span></div><div class="topbar-tools"><label class="token-control" for="token-field"><span class="token-label">TOKEN PHIÊN</span><input id="token-field" class="token-input" type="password" autocomplete="off" placeholder="Nhập internal token" aria-label="Internal token"></label><button class="button button-secondary button-small" id="save-token" type="button">Lưu token</button><div class="system-status" id="system-status" role="status" aria-live="polite"><span class="status-dot is-checking"></span><span class="system-label">Đang kiểm tra hệ thống</span></div></div></header>
       <div class="page-content jobs-page">
         <section class="page-heading"><div><div class="eyebrow">NGUỒN VIDEO &amp; XỬ LÝ</div><h1>Video &amp; Tiến trình</h1><p class="page-subtitle">Tải video lên và theo dõi các job xử lý</p></div><button class="button button-secondary" id="refresh-jobs-page" type="button"><span class="button-icon" data-icon="refresh"></span>Làm mới</button></section>
 
@@ -37,17 +37,17 @@
 
         <section class="table-panel panel jobs-table-panel" aria-label="Danh sách video"><div class="table-toolbar"><div><h2>Video</h2><p id="videos-count">Đang tải danh sách…</p></div><form id="videos-filter" class="inline-filter"><label class="field"><span>CAMERA</span><select id="video-camera-filter" name="cameraId"><option value="">Tất cả camera</option></select></label><label class="page-size">Số dòng<select id="videos-page-size"><option value="10">10</option><option value="20" selected>20</option><option value="50">50</option></select></label><button class="button button-secondary button-small" type="submit">Lọc</button></form></div>
           <div class="table-scroll"><table class="data-table"><thead><tr><th>TÊN FILE</th><th>DUNG LƯỢNG</th><th>CAMERA</th><th>THỜI GIAN UPLOAD</th><th>SỐ JOB</th><th></th></tr></thead><tbody id="videos-body"></tbody></table></div>
-          <div id="videos-feedback" class="list-feedback" role="status" aria-live="polite"></div><div class="pagination"><span id="videos-page-summary">—</span><div class="pagination-controls"><button class="page-button" id="videos-previous" type="button" aria-label="Trang video trước"><span data-icon="chevron-left"></span></button><span class="page-current" id="videos-page-current">—</span><button class="page-button" id="videos-next" type="button" aria-label="Trang video tiếp"><span data-icon="chevron-right"></span></button></div></div>
+          <div id="videos-feedback" class="list-feedback" role="status" aria-live="polite"></div><div class="pagination"><span id="videos-page-summary">—</span><div class="pagination-controls"><button class="page-button btn-icon" id="videos-previous" type="button" aria-label="Trang video trước" title="Trang video trước"><span data-icon="chevron-left"></span></button><span class="page-current" id="videos-page-current">—</span><button class="page-button btn-icon" id="videos-next" type="button" aria-label="Trang video tiếp" title="Trang video tiếp"><span data-icon="chevron-right"></span></button></div></div>
         </section>
 
         <section class="table-panel panel jobs-table-panel" aria-label="Danh sách job"><div class="table-toolbar"><div><h2>Job xử lý</h2><p id="jobs-count">Đang tải danh sách…</p></div><form id="jobs-filter" class="inline-filter"><label class="field"><span>TRẠNG THÁI</span><select name="status"><option value="">Tất cả trạng thái</option><option value="PENDING">Đang chờ</option><option value="PROCESSING">Đang xử lý</option><option value="COMPLETED">Hoàn tất</option><option value="FAILED">Thất bại</option></select></label><label class="field"><span>VIDEO ID</span><input name="videoId" type="text" placeholder="UUID video"></label><label class="page-size">Số dòng<select id="jobs-page-size"><option value="10">10</option><option value="20" selected>20</option><option value="50">50</option></select></label><button class="button button-secondary button-small" type="submit">Lọc</button></form></div>
           <div class="table-scroll"><table class="data-table"><thead><tr><th>MÃ JOB</th><th>VIDEO</th><th>TRẠNG THÁI</th><th>THỜI GIAN CHẠY</th><th>LỖI</th><th></th></tr></thead><tbody id="jobs-body"></tbody></table></div>
-          <div id="jobs-feedback" class="list-feedback" role="status" aria-live="polite"></div><div class="pagination"><span id="jobs-page-summary">—</span><div class="pagination-controls"><button class="page-button" id="jobs-previous" type="button" aria-label="Trang job trước"><span data-icon="chevron-left"></span></button><span class="page-current" id="jobs-page-current">—</span><button class="page-button" id="jobs-next" type="button" aria-label="Trang job tiếp"><span data-icon="chevron-right"></span></button></div></div>
+          <div id="jobs-feedback" class="list-feedback" role="status" aria-live="polite"></div><div class="pagination"><span id="jobs-page-summary">—</span><div class="pagination-controls"><button class="page-button btn-icon" id="jobs-previous" type="button" aria-label="Trang job trước" title="Trang job trước"><span data-icon="chevron-left"></span></button><span class="page-current" id="jobs-page-current">—</span><button class="page-button btn-icon" id="jobs-next" type="button" aria-label="Trang job tiếp" title="Trang job tiếp"><span data-icon="chevron-right"></span></button></div></div>
         </section>
         <footer class="page-footer">Tiến trình chỉ hiển thị trạng thái do API trả về.</footer>
       </div>
     </main>
   </div>
-  <script src="js/config.js"></script><script src="js/api.js?v=3"></script><script src="js/app.js?v=8"></script>
+  <script src="js/config.js"></script><script src="js/api.js?v=3"></script><script src="js/app.js?v=11"></script>
 </body>
 </html>
