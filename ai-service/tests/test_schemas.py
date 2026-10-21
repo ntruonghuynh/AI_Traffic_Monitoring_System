@@ -36,9 +36,9 @@ def test_json_contract_serializes_enums_nulls_and_schema_version(tmp_path: Path)
     result_json = tmp_path / "results.json"
     result_json.write_text(ProcessingResult(summary=summary, events=[event]).to_json(), encoding="utf-8")
     payload = json.loads(result_json.read_text(encoding="utf-8"))
-    assert payload["schema_version"] == "1.1"
-    assert payload["summary"]["schema_version"] == "1.1"
-    assert payload["events"][0]["schema_version"] == "1.1"
+    assert payload["schema_version"] == "1.2"
+    assert payload["summary"]["schema_version"] == "1.2"
+    assert payload["events"][0]["schema_version"] == "1.2"
     assert payload["events"][0]["plate_crop_path"] == f"evidence/{event.event_id}_plate.jpg"
     assert payload["events"][0]["event_type"] == EventType.LINE_CROSSING_CANDIDATE.value
     assert payload["events"][0]["status"] == EventStatus.PENDING_REVIEW.value

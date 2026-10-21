@@ -20,6 +20,7 @@ from traffic_ai.schemas import (
     LineCrossingEvent,
     OutputArtifacts,
     PlateDetection,
+    PlateCropReason,
     PlateRecognition,
     Point,
     ProcessingResult,
@@ -87,8 +88,9 @@ class VideoProcessor:
             legacy_csv="violators.csv" if self.config.output.legacy_csv else None,
             legacy_sqlite="violations.db" if self.config.output.legacy_sqlite else None,
         )
+        effective_job_id = job_id or str(uuid.uuid4())
         summary = ProcessingSummary(
-            job_id=job_id or str(uuid.uuid4()),
+            job_id=effective_job_id,
             status=ProcessingStatus.RUNNING,
             input_video=metadata,
             started_at=datetime.now(timezone.utc),
@@ -116,7 +118,12 @@ class VideoProcessor:
                 frame_plates: list[PlateDetection] = []
                 frame_plate_crops: dict[str, Any] = {}
                 for transition in transitions:
-                    recognition, plate_detection, plate_crop = self._recognize_plate(frame, transition.vehicle.bbox)
+                    recognition, plate_detection, plate_crop, plate_crop_reason = self._recognize_plate(
+                        frame,
+                        transition.vehicle.bbox,
+                        job_id=effective_job_id,
+                        track_id=transition.track_id,
+                    )
                     if plate_detection is not None:
                         frame_plates.append(plate_detection)
                     event = LineCrossingEvent(
@@ -130,6 +137,7 @@ class VideoProcessor:
                         frame_index=transition.frame_index,
                         timestamp_seconds=transition.timestamp_seconds,
                         crossing_direction=transition.direction,
+                        plate_crop_reason=plate_crop_reason,
                     )
                     frame_events.append(event)
                     events.append(event)
@@ -178,28 +186,43 @@ class VideoProcessor:
         self,
         frame: Any,
         vehicle_bbox: Any,
-    ) -> tuple[PlateRecognition, PlateDetection | None, Any | None]:
+        *,
+        job_id: str,
+        track_id: int,
+    ) -> tuple[PlateRecognition, PlateDetection | None, Any | None, PlateCropReason | None]:
         try:
             candidates = self.plate_detector.detect(frame, vehicle_bbox)
-        except Exception:
-            LOGGER.warning("Plate detection failed for one candidate event", exc_info=True)
-            return PlateRecognition(), None, None
+        except Exception as exc:
+            LOGGER.warning(
+                "Plate detection failed job_id=%s track_id=%s exception_type=%s",
+                job_id,
+                track_id,
+                type(exc).__name__,
+            )
+            return PlateRecognition(), None, None, PlateCropReason.DETECTOR_ERROR
         if not candidates:
-            return PlateRecognition(), None, None
+            return PlateRecognition(), None, None, PlateCropReason.NO_PLATE_DETECTED
 
         best_plate = max(candidates, key=lambda item: item.detection.confidence)
         height, width = best_plate.image.shape[:2]
-        crop_for_output = (
-            best_plate.image
-            if min(height, width) >= self.config.plate_detection.min_crop_size
-            else None
-        )
+        crop_size_is_valid = min(height, width) >= self.config.plate_detection.min_crop_size
+        crop_for_output = best_plate.image if crop_size_is_valid else None
+        crop_reason = None if crop_size_is_valid else PlateCropReason.TOO_SMALL
+        if not crop_size_is_valid:
+            LOGGER.info(
+                "Plate crop below minimum job_id=%s track_id=%s width=%d height=%d min_crop_size=%d",
+                job_id,
+                track_id,
+                width,
+                height,
+                self.config.plate_detection.min_crop_size,
+            )
         try:
             ocr_candidates = self.plate_recognizer.recognize(best_plate.image)
         except Exception:
             LOGGER.warning("Plate pipeline failed for one candidate event", exc_info=True)
-            return PlateRecognition(), best_plate.detection, crop_for_output
-        return self.plate_validator.select_best(ocr_candidates), best_plate.detection, crop_for_output
+            return PlateRecognition(), best_plate.detection, crop_for_output, crop_reason
+        return self.plate_validator.select_best(ocr_candidates), best_plate.detection, crop_for_output, crop_reason
 
     @staticmethod
     def _read_metadata(capture: Any, input_path: Path) -> VideoMetadata:
