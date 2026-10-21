@@ -45,3 +45,4 @@ output/*
 !output/violation_1.jpg
 !output/violation_2.jpg
 !output/violation_3.jpg
+frontend/js/config.js
