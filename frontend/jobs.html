@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#F4F7FB">
+  <title>Video &amp; Tiến trình · Traffic Monitor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet"><link rel="stylesheet" href="css/style.css">
+</head>
+<body data-page="jobs">
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Điều hướng chính">
+      <a class="brand" href="violations.html" aria-label="Traffic Monitor"><span class="brand-mark" aria-hidden="true">TM</span><span class="brand-copy"><strong>Traffic Monitor</strong><small>HỆ THỐNG GIÁM SÁT</small></span></a>
+      <div class="sidebar-caption">KHÔNG GIAN LÀM VIỆC</div>
+      <nav class="nav-list">
+        <a class="nav-item" href="#" aria-disabled="true"><span class="icon-wrap" data-icon="grid"></span><span>Tổng quan</span><span class="nav-soon">SAU</span></a>
+        <a class="nav-item" href="violations.html"><span class="icon-wrap" data-icon="list"></span><span>Danh sách vi phạm</span></a>
+        <a class="nav-item is-active" href="jobs.html" aria-current="page"><span class="icon-wrap" data-icon="video"></span><span>Video &amp; Tiến trình</span></a>
+        <a class="nav-item" href="#" aria-disabled="true"><span class="icon-wrap" data-icon="camera"></span><span>Quản lý Camera</span><span class="nav-soon">SAU</span></a>
+        <a class="nav-item" href="#token-field"><span class="icon-wrap" data-icon="settings"></span><span>Cài đặt &amp; Token</span></a>
+      </nav>
+      <div class="sidebar-foot"><span class="sidebar-foot-dot"></span><span>Quản lý video và tiến trình xử lý</span></div>
+    </aside>
+    <main class="main-area">
+      <header class="topbar"><div class="topbar-context"><span class="eyebrow">TRUNG TÂM ĐIỀU HÀNH</span><span class="topbar-separator">/</span><span>Video &amp; Tiến trình</span></div><div class="topbar-tools"><label class="token-control" for="token-field"><span class="token-label">TOKEN PHIÊN</span><input id="token-field" class="token-input" type="password" autocomplete="off" placeholder="Nhập internal token" aria-label="Internal token"></label><button class="button button-secondary button-small" id="save-token" type="button">Lưu token</button><div class="system-status" id="system-status" role="status" aria-live="polite"><span class="status-dot is-checking"></span><span class="system-label">Đang kiểm tra hệ thống</span></div></div></header>
+      <div class="page-content jobs-page">
+        <section class="page-heading"><div><div class="eyebrow">NGUỒN VIDEO &amp; XỬ LÝ</div><h1>Video &amp; Tiến trình</h1><p class="page-subtitle">Tải video lên và theo dõi các job xử lý</p></div><button class="button button-secondary" id="refresh-jobs-page" type="button"><span class="button-icon" data-icon="refresh"></span>Làm mới</button></section>
+
+        <section class="panel upload-panel" aria-label="Tải video lên"><div class="panel-heading"><div><h2>Tải video lên</h2><p>Chọn tệp video và camera tùy chọn</p></div></div>
+          <form id="upload-form" class="upload-form">
+            <label class="field upload-file-field"><span>TỆP VIDEO</span><input id="video-file" name="file" type="file" accept="video/*,.mp4,.mov,.m4v,.webm,.avi,.mkv,.mpeg,.mpg,.3gp,.wmv,.ts" required></label>
+            <label class="field"><span>CAMERA (TÙY CHỌN)</span><select id="upload-camera" name="cameraId"><option value="">Không gắn camera</option></select></label>
+            <button id="upload-submit" class="button button-primary" type="submit">Tải video lên</button>
+          </form>
+          <p id="upload-token-required" class="token-hint">Cần internal token để tải video lên.</p>
+          <div id="upload-feedback" class="list-feedback" role="status" aria-live="polite"></div>
+        </section>
+
+        <section class="table-panel panel jobs-table-panel" aria-label="Danh sách video"><div class="table-toolbar"><div><h2>Video</h2><p id="videos-count">Đang tải danh sách…</p></div><form id="videos-filter" class="inline-filter"><label class="field"><span>CAMERA</span><select id="video-camera-filter" name="cameraId"><option value="">Tất cả camera</option></select></label><label class="page-size">Số dòng<select id="videos-page-size"><option value="10">10</option><option value="20" selected>20</option><option value="50">50</option></select></label><button class="button button-secondary button-small" type="submit">Lọc</button></form></div>
+          <div class="table-scroll"><table class="data-table"><thead><tr><th>TÊN FILE</th><th>DUNG LƯỢNG</th><th>CAMERA</th><th>THỜI GIAN UPLOAD</th><th>SỐ JOB</th><th></th></tr></thead><tbody id="videos-body"></tbody></table></div>
+          <div id="videos-feedback" class="list-feedback" role="status" aria-live="polite"></div><div class="pagination"><span id="videos-page-summary">—</span><div class="pagination-controls"><button class="page-button" id="videos-previous" type="button" aria-label="Trang video trước"><span data-icon="chevron-left"></span></button><span class="page-current" id="videos-page-current">—</span><button class="page-button" id="videos-next" type="button" aria-label="Trang video tiếp"><span data-icon="chevron-right"></span></button></div></div>
+        </section>
+
+        <section class="table-panel panel jobs-table-panel" aria-label="Danh sách job"><div class="table-toolbar"><div><h2>Job xử lý</h2><p id="jobs-count">Đang tải danh sách…</p></div><form id="jobs-filter" class="inline-filter"><label class="field"><span>TRẠNG THÁI</span><select name="status"><option value="">Tất cả trạng thái</option><option value="PENDING">Đang chờ</option><option value="PROCESSING">Đang xử lý</option><option value="COMPLETED">Hoàn tất</option><option value="FAILED">Thất bại</option></select></label><label class="field"><span>VIDEO ID</span><input name="videoId" type="text" placeholder="UUID video"></label><label class="page-size">Số dòng<select id="jobs-page-size"><option value="10">10</option><option value="20" selected>20</option><option value="50">50</option></select></label><button class="button button-secondary button-small" type="submit">Lọc</button></form></div>
+          <div class="table-scroll"><table class="data-table"><thead><tr><th>MÃ JOB</th><th>VIDEO</th><th>TRẠNG THÁI</th><th>THỜI GIAN CHẠY</th><th>LỖI</th><th></th></tr></thead><tbody id="jobs-body"></tbody></table></div>
+          <div id="jobs-feedback" class="list-feedback" role="status" aria-live="polite"></div><div class="pagination"><span id="jobs-page-summary">—</span><div class="pagination-controls"><button class="page-button" id="jobs-previous" type="button" aria-label="Trang job trước"><span data-icon="chevron-left"></span></button><span class="page-current" id="jobs-page-current">—</span><button class="page-button" id="jobs-next" type="button" aria-label="Trang job tiếp"><span data-icon="chevron-right"></span></button></div></div>
+        </section>
+        <footer class="page-footer">Tiến trình chỉ hiển thị trạng thái do API trả về.</footer>
+      </div>
+    </main>
+  </div>
+  <script src="js/config.js"></script><script src="js/api.js?v=2"></script><script src="js/app.js?v=2"></script>
+</body>
+</html>
