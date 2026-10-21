@@ -210,6 +210,12 @@
     let filters = {};
     let sequence = 0;
 
+    const requestedJobId = new URLSearchParams(location.search).get('jobId');
+    if (requestedJobId && form.elements.namedItem('jobId')) {
+      form.elements.namedItem('jobId').value = requestedJobId;
+      filters.jobId = requestedJobId;
+    }
+
     async function load() {
       const loadId = ++sequence;
       body.replaceChildren();
@@ -529,12 +535,384 @@
     loadDetail();
   }
 
+  function apiFailureText(details) {
+    const authHint = details.statusCode === 401 || details.statusCode === 403 ? ' Vui lòng nhập và lưu internal token ở thanh trên.' : '';
+    return `${details.message}${authHint}`;
+  }
+
+  function cameraName(camera) {
+    return camera && camera.name ? camera.name : '—';
+  }
+
+  function jobStatusLabel(status) {
+    const labels = { PENDING: 'Đang chờ', PROCESSING: 'Đang xử lý', COMPLETED: 'Hoàn tất', FAILED: 'Thất bại' };
+    return labels[status] || status || 'Chưa rõ';
+  }
+
+  function jobStatusTone(status) {
+    if (status === 'COMPLETED') return 'status-green';
+    if (status === 'FAILED') return 'status-red';
+    if (status === 'PENDING' || status === 'PROCESSING') return 'status-yellow';
+    return 'status-neutral';
+  }
+
+  function formatJobRuntime(job, now = Date.now()) {
+    if (!job || job.status === 'PENDING' || !job.startedAt) return '—';
+    const start = new Date(job.startedAt).getTime();
+    const end = job.status === 'PROCESSING'
+      ? now
+      : job.status === 'COMPLETED' || job.status === 'FAILED'
+        ? job.completedAt ? new Date(job.completedAt).getTime() : NaN
+        : NaN;
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return '—';
+    const totalSeconds = Math.floor((end - start) / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  }
+
+  function formatFileSize(value) {
+    if (typeof value !== 'string' || !/^\d+$/.test(value)) return '—';
+    let bytes;
+    try { bytes = BigInt(value); } catch { return '—'; }
+    const units = [
+      { name: 'KB', divisor: 1024n },
+      { name: 'MB', divisor: 1024n ** 2n },
+      { name: 'GB', divisor: 1024n ** 3n },
+    ];
+    let unit = units[0];
+    for (const candidate of units) {
+      if (bytes >= candidate.divisor) unit = candidate;
+    }
+    const tenths = (bytes * 10n + unit.divisor / 2n) / unit.divisor;
+    return `${tenths / 10n}.${tenths % 10n} ${unit.name}`;
+  }
+
+  function initJobs() {
+    const uploadForm = document.getElementById('upload-form');
+    const fileInput = document.getElementById('video-file');
+    const cameraSelect = document.getElementById('upload-camera');
+    const uploadButton = document.getElementById('upload-submit');
+    const uploadFeedback = document.getElementById('upload-feedback');
+    const tokenHint = document.getElementById('upload-token-required');
+    const videosBody = document.getElementById('videos-body');
+    const videosFeedback = document.getElementById('videos-feedback');
+    const videoFilter = document.getElementById('videos-filter');
+    const videoCameraFilter = document.getElementById('video-camera-filter');
+    const videosSize = document.getElementById('videos-page-size');
+    const jobsBody = document.getElementById('jobs-body');
+    const jobsFeedback = document.getElementById('jobs-feedback');
+    const jobsFilter = document.getElementById('jobs-filter');
+    const jobsSize = document.getElementById('jobs-page-size');
+    let videoPage = 1;
+    let jobsPage = 1;
+    let videoFilters = {};
+    let jobFilters = {};
+    let videoSequence = 0;
+    let jobsSequence = 0;
+    let videos = [];
+    const jobRows = new Map();
+    const pollingJobs = new Set();
+    const inFlightPolls = new Set();
+    const requestedVideoId = new URLSearchParams(location.search).get('videoId');
+    if (requestedVideoId) {
+      const videoIdField = jobsFilter.elements.namedItem('videoId');
+      if (videoIdField) videoIdField.value = requestedVideoId;
+      jobFilters.videoId = requestedVideoId;
+    }
+
+    function syncUploadAvailability() {
+      const hasToken = Boolean(ApiClient.getToken());
+      uploadButton.disabled = !hasToken;
+      tokenHint.hidden = hasToken;
+      videosBody.querySelectorAll('[data-create-job="true"]').forEach((button) => {
+        button.disabled = !hasToken;
+        button.title = hasToken ? 'Tạo job xử lý cho video này' : 'Cần internal token';
+      });
+      videosBody.querySelectorAll('[data-create-job-confirm="true"]').forEach((button) => {
+        button.disabled = !hasToken;
+        button.title = hasToken ? '' : 'Cần internal token';
+      });
+    }
+    syncUploadAvailability();
+    window.addEventListener('internal-token-change', syncUploadAvailability);
+
+    async function loadCameras() {
+      try {
+        const result = await ApiClient.getJson('/cameras?limit=100');
+        const cameras = Array.isArray(result) ? result : Array.isArray(result && result.data) ? result.data : [];
+        for (const camera of cameras) {
+          if (!camera || !camera.id) continue;
+          const option = make('option', '', camera.name || camera.id);
+          option.value = camera.id;
+          cameraSelect.append(option);
+          const filterOption = make('option', '', camera.name || camera.id);
+          filterOption.value = camera.id;
+          videoCameraFilter.append(filterOption);
+        }
+      } catch (error) {
+        const details = errorMessage(error);
+        addFeedback(uploadFeedback, 'Không tải được danh sách camera', apiFailureText(details), 'error', details.statusCode);
+      }
+    }
+
+    function updateVideosPagination(meta) {
+      const total = Number(meta.total) || 0;
+      const totalPages = Number(meta.totalPages) || 0;
+      videoPage = Number(meta.page) || videoPage;
+      document.getElementById('videos-count').textContent = `${total.toLocaleString('vi-VN')} video`;
+      document.getElementById('videos-page-summary').textContent = total ? `Trang ${videoPage} / ${totalPages} · ${total.toLocaleString('vi-VN')} kết quả` : 'Không có kết quả';
+      document.getElementById('videos-page-current').textContent = totalPages ? `${videoPage}/${totalPages}` : '—';
+      document.getElementById('videos-previous').disabled = videoPage <= 1;
+      document.getElementById('videos-next').disabled = totalPages === 0 || videoPage >= totalPages;
+    }
+
+    function renderVideo(video) {
+      const row = make('tr');
+      const filename = video.originalFilename || video.filename || video.name || '—';
+      const nameCell = make('td', '', filename);
+      nameCell.title = filename;
+      const fileSize = make('td', 'mono', formatFileSize(video.fileSize));
+      if (typeof video.fileSize === 'string') fileSize.title = video.fileSize;
+      const camera = make('td', '', cameraName(video.camera));
+      const uploaded = make('td', '', formatDate(video.uploadedAt));
+      const jobsCount = make('td', 'mono', video._count && Number.isFinite(video._count.processingJobs) ? video._count.processingJobs : '—');
+      const actionCell = make('td');
+      function createJobButton() {
+        const button = make('button', 'button button-secondary button-small', 'Tạo job');
+        button.type = 'button';
+        button.dataset.createJob = 'true';
+        button.disabled = !ApiClient.getToken();
+        button.title = button.disabled ? 'Cần internal token' : 'Tạo job xử lý cho video này';
+        button.addEventListener('click', () => showJobConfirmation());
+        return button;
+      }
+
+      function showJobConfirmation() {
+        if (!ApiClient.getToken()) return;
+        const confirmation = make('div', 'job-confirmation');
+        const prompt = make('span', 'job-confirmation-prompt', 'Tạo job cho ');
+        prompt.append(make('strong', '', filename), document.createTextNode('?'));
+        const confirm = make('button', 'button button-primary button-small', 'Xác nhận');
+        confirm.type = 'button';
+        confirm.dataset.createJobConfirm = 'true';
+        const cancel = make('button', 'button button-secondary button-small', 'Hủy');
+        cancel.type = 'button';
+        cancel.addEventListener('click', () => actionCell.replaceChildren(createJobButton()));
+        confirm.addEventListener('click', async () => {
+          if (!ApiClient.getToken()) return;
+          confirm.disabled = true;
+          cancel.disabled = true;
+          confirm.textContent = 'Đang tạo…';
+          try {
+            await ApiClient.postJson('/jobs', { videoId: video.id });
+            addFeedback(uploadFeedback, 'Đã tạo job', `Job xử lý cho video ${filename} đã được tạo.`, 'success');
+            await Promise.all([loadVideos(), loadJobs()]);
+          } catch (error) {
+            const details = errorMessage(error);
+            const statusPrefix = details.statusCode ? `HTTP ${details.statusCode} · ` : '';
+            const authHint = details.statusCode === 401 || details.statusCode === 403 ? ' Vui lòng nhập và lưu internal token ở thanh trên.' : '';
+            const feedback = make('span', 'job-create-error', `${statusPrefix}${details.message}${authHint}`);
+            actionCell.replaceChildren(createJobButton(), feedback);
+          }
+        });
+        confirmation.append(prompt, confirm, cancel);
+        actionCell.replaceChildren(confirmation);
+      }
+
+      actionCell.append(createJobButton());
+      row.append(nameCell, fileSize, camera, uploaded, jobsCount, actionCell);
+      return row;
+    }
+
+    async function loadVideos() {
+      const loadId = ++videoSequence;
+      videosBody.replaceChildren();
+      addFeedback(videosFeedback, 'Đang tải video', 'Đang lấy danh sách video từ API.');
+      document.getElementById('videos-count').textContent = 'Đang tải danh sách…';
+      const query = new URLSearchParams({ page: String(videoPage), limit: String(videosSize.value), ...videoFilters });
+      try {
+        const result = await ApiClient.getJson(`/videos?${query.toString()}`);
+        if (loadId !== videoSequence) return;
+        videos = Array.isArray(result && result.data) ? result.data : [];
+        videosBody.replaceChildren(...videos.map(renderVideo));
+        videosFeedback.replaceChildren();
+        if (!videos.length) addFeedback(videosFeedback, 'Chưa có video phù hợp', 'Thay đổi bộ lọc hoặc tải video lên.');
+        updateVideosPagination(result && result.meta ? result.meta : { page: videoPage, total: videos.length, totalPages: videos.length ? 1 : 0 });
+      } catch (error) {
+        if (loadId !== videoSequence) return;
+        videos = [];
+        const details = errorMessage(error);
+        addFeedback(videosFeedback, 'Không tải được video', apiFailureText(details), 'error', details.statusCode, loadVideos);
+        document.getElementById('videos-count').textContent = 'Không tải được danh sách';
+      }
+    }
+
+    function updateJobRow(entry) {
+      const { job, status, elapsed, error, violationLink } = entry;
+      status.className = `status-badge ${jobStatusTone(job.status)}`;
+      status.textContent = jobStatusLabel(job.status);
+      elapsed.textContent = formatJobRuntime(job);
+      error.textContent = job.status === 'FAILED' && job.errorMessage ? job.errorMessage : '—';
+      violationLink.href = `violations.html?jobId=${encodeURIComponent(job.id)}`;
+      violationLink.textContent = 'Xem vi phạm';
+      violationLink.hidden = !job.id;
+    }
+
+    function renderJob(job) {
+      const row = make('tr');
+      const idLink = make('a', 'event-link mono', job.id || '—');
+      idLink.href = `violations.html?jobId=${encodeURIComponent(job.id || '')}`;
+      idLink.title = job.id || '';
+      const videoId = job.video && job.video.id ? job.video.id : job.videoId;
+      const videoName = job.video && job.video.originalFilename ? job.video.originalFilename : videoId || '—';
+      const video = make('td');
+      if (videoId) {
+        const link = make('a', 'event-link', videoName);
+        link.href = `jobs.html?videoId=${encodeURIComponent(videoId)}`;
+        video.append(link);
+      } else video.textContent = videoName;
+      const status = make('span');
+      const elapsed = make('span', 'mono');
+      const error = make('span', 'job-error');
+      const violationLink = make('a', 'text-button job-events-link', 'Xem vi phạm');
+      violationLink.href = `violations.html?jobId=${encodeURIComponent(job.id || '')}`;
+      const statusCell = make('td'); statusCell.append(status);
+      const elapsedCell = make('td'); elapsedCell.append(elapsed);
+      const errorCell = make('td'); errorCell.append(error);
+      const actionCell = make('td'); actionCell.append(violationLink);
+      row.append(make('td', 'mono', ''), video, statusCell, elapsedCell, errorCell, actionCell);
+      row.firstElementChild.append(idLink);
+      const entry = { job, row, status, elapsed, error, violationLink };
+      updateJobRow(entry);
+      jobRows.set(job.id, entry);
+      if (job.status === 'PENDING' || job.status === 'PROCESSING') pollingJobs.add(job.id);
+      else pollingJobs.delete(job.id);
+      return row;
+    }
+
+    function updateJobsPagination(meta) {
+      const total = Number(meta.total) || 0;
+      const totalPages = Number(meta.totalPages) || 0;
+      jobsPage = Number(meta.page) || jobsPage;
+      document.getElementById('jobs-count').textContent = `${total.toLocaleString('vi-VN')} job`;
+      document.getElementById('jobs-page-summary').textContent = total ? `Trang ${jobsPage} / ${totalPages} · ${total.toLocaleString('vi-VN')} kết quả` : 'Không có kết quả';
+      document.getElementById('jobs-page-current').textContent = totalPages ? `${jobsPage}/${totalPages}` : '—';
+      document.getElementById('jobs-previous').disabled = jobsPage <= 1;
+      document.getElementById('jobs-next').disabled = totalPages === 0 || jobsPage >= totalPages;
+    }
+
+    async function loadJobs() {
+      const loadId = ++jobsSequence;
+      jobsBody.replaceChildren();
+      jobRows.clear();
+      pollingJobs.clear();
+      addFeedback(jobsFeedback, 'Đang tải job', 'Đang lấy danh sách tiến trình từ API.');
+      document.getElementById('jobs-count').textContent = 'Đang tải danh sách…';
+      const query = new URLSearchParams({ page: String(jobsPage), limit: String(jobsSize.value), ...jobFilters });
+      try {
+        const result = await ApiClient.getJson(`/jobs?${query.toString()}`);
+        if (loadId !== jobsSequence) return;
+        const jobs = Array.isArray(result && result.data) ? result.data : [];
+        jobsBody.replaceChildren(...jobs.map(renderJob));
+        jobsFeedback.replaceChildren();
+        if (!jobs.length) addFeedback(jobsFeedback, 'Chưa có job phù hợp', 'Job sẽ xuất hiện sau khi tạo từ một video.');
+        updateJobsPagination(result && result.meta ? result.meta : { page: jobsPage, total: jobs.length, totalPages: jobs.length ? 1 : 0 });
+      } catch (error) {
+        if (loadId !== jobsSequence) return;
+        const details = errorMessage(error);
+        addFeedback(jobsFeedback, 'Không tải được job', apiFailureText(details), 'error', details.statusCode, loadJobs);
+        document.getElementById('jobs-count').textContent = 'Không tải được danh sách';
+      }
+    }
+
+    async function pollJobs() {
+      for (const id of pollingJobs) {
+        if (inFlightPolls.has(id)) continue;
+        inFlightPolls.add(id);
+        ApiClient.getJson(`/jobs/${encodeURIComponent(id)}`).then((job) => {
+          const entry = jobRows.get(id);
+          if (!entry || !job) return;
+          entry.job = job;
+          updateJobRow(entry);
+          if (job.status !== 'PENDING' && job.status !== 'PROCESSING') {
+            pollingJobs.delete(id);
+            if (jobFilters.status && jobFilters.status !== job.status) loadJobs();
+          }
+        }).catch((error) => {
+          const details = errorMessage(error);
+          if (details.statusCode === 401 || details.statusCode === 403) {
+            addFeedback(jobsFeedback, 'Cần internal token', apiFailureText(details), 'error', details.statusCode);
+            pollingJobs.delete(id);
+          }
+        }).finally(() => inFlightPolls.delete(id));
+      }
+    }
+
+    function isVideoFile(file) {
+      const allowedExtensions = new Set(['mp4', 'mov', 'm4v', 'webm', 'avi', 'mkv', 'mpeg', 'mpg', '3gp', 'wmv', 'ts']);
+      const extension = file.name.includes('.') ? file.name.split('.').pop().toLowerCase() : '';
+      return Boolean(file.type.startsWith('video/') || allowedExtensions.has(extension));
+    }
+
+    uploadForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      uploadFeedback.replaceChildren();
+      const file = fileInput.files && fileInput.files[0];
+      if (!file) { addFeedback(uploadFeedback, 'Chưa chọn video', 'Chọn một tệp video trước khi tải lên.', 'error'); return; }
+      if (!isVideoFile(file)) { addFeedback(uploadFeedback, 'Định dạng không được hỗ trợ', 'Chỉ chấp nhận tệp có định dạng video.', 'error'); return; }
+      if (!ApiClient.getToken()) { addFeedback(uploadFeedback, 'Cần internal token', 'Vui lòng nhập và lưu internal token ở thanh trên trước khi tải video.', 'error', 401); return; }
+      const formData = new FormData();
+      formData.append('file', file);
+      if (cameraSelect.value) formData.append('cameraId', cameraSelect.value);
+      uploadButton.disabled = true;
+      addFeedback(uploadFeedback, 'Đang tải video', 'Đang gửi tệp lên API.');
+      try {
+        const uploaded = await ApiClient.postMultipart('/videos/upload', formData);
+        const name = uploaded && uploaded.originalFilename ? uploaded.originalFilename : file.name;
+        addFeedback(uploadFeedback, 'Tải video thành công', `${name} đã được tải lên.`);
+        fileInput.value = '';
+        videoPage = 1;
+        await loadVideos();
+      } catch (error) {
+        const details = errorMessage(error);
+        addFeedback(uploadFeedback, 'Không tải được video', apiFailureText(details), 'error', details.statusCode);
+      } finally { syncUploadAvailability(); }
+    });
+
+    videoFilter.addEventListener('submit', (event) => {
+      event.preventDefault(); videoFilters = {};
+      if (videoCameraFilter.value) videoFilters.cameraId = videoCameraFilter.value;
+      videoPage = 1; loadVideos();
+    });
+    jobsFilter.addEventListener('submit', (event) => {
+      event.preventDefault(); jobsPage = 1; jobFilters = {};
+      const values = new FormData(jobsFilter);
+      for (const key of ['status', 'videoId']) { const value = String(values.get(key) || '').trim(); if (value) jobFilters[key] = value; }
+      loadJobs();
+    });
+    videosSize.addEventListener('change', () => { videoPage = 1; loadVideos(); });
+    jobsSize.addEventListener('change', () => { jobsPage = 1; loadJobs(); });
+    document.getElementById('videos-previous').addEventListener('click', () => { if (videoPage > 1) { videoPage -= 1; loadVideos(); } });
+    document.getElementById('videos-next').addEventListener('click', () => { videoPage += 1; loadVideos(); });
+    document.getElementById('jobs-previous').addEventListener('click', () => { if (jobsPage > 1) { jobsPage -= 1; loadJobs(); } });
+    document.getElementById('jobs-next').addEventListener('click', () => { jobsPage += 1; loadJobs(); });
+    document.getElementById('refresh-jobs-page').addEventListener('click', () => { loadVideos(); loadJobs(); });
+    loadCameras();
+    loadVideos();
+    loadJobs();
+    const pollTimer = globalThis.setInterval(pollJobs, 2000);
+    window.addEventListener('pagehide', () => { globalThis.clearInterval(pollTimer); pollingJobs.clear(); });
+  }
+
   renderIcons();
   trackStickyHeaderHeight();
   wireToken();
   checkHealth();
   if (document.body.dataset.page === 'violations') initList();
   if (document.body.dataset.page === 'violation') initDetail();
+  if (document.body.dataset.page === 'jobs') initJobs();
   window.addEventListener('pagehide', () => {
     for (const url of activeObjectUrls) URL.revokeObjectURL(url);
     activeObjectUrls.clear();
