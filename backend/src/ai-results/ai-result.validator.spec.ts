@@ -23,10 +23,42 @@ describe('validateAiResult', () => {
     });
   });
 
+  it('chấp nhận plate_crop_reason hợp lệ ở schema 1.2 và giữ trường này trong event DTO', async () => {
+    const payload = makeAiResult();
+    payload.schema_version = '1.2';
+    payload.summary.schema_version = '1.2';
+    payload.events[0].schema_version = '1.2';
+    Object.assign(payload.events[0], { plate_crop_path: null, plate_crop_reason: 'TOO_SMALL' });
+
+    await expect(validateAiResult(payload)).resolves.toMatchObject({
+      schema_version: '1.2',
+      events: [expect.objectContaining({ plate_crop_path: null, plate_crop_reason: 'TOO_SMALL' })],
+    });
+  });
+
+  it('từ chối plate_crop_reason không hỗ trợ hoặc đi cùng crop đã lưu', async () => {
+    const invalidReason = makeAiResult();
+    invalidReason.schema_version = '1.2';
+    invalidReason.summary.schema_version = '1.2';
+    invalidReason.events[0].schema_version = '1.2';
+    Object.assign(invalidReason.events[0], { plate_crop_path: null, plate_crop_reason: 'NOT_FOUND' });
+    await expect(validateAiResult(invalidReason)).rejects.toBeInstanceOf(BadRequestException);
+
+    const reasonWithCrop = makeAiResult();
+    reasonWithCrop.schema_version = '1.2';
+    reasonWithCrop.summary.schema_version = '1.2';
+    reasonWithCrop.events[0].schema_version = '1.2';
+    Object.assign(reasonWithCrop.events[0], {
+      plate_crop_path: 'evidence/plate.jpg',
+      plate_crop_reason: 'NO_PLATE_DETECTED',
+    });
+    await expect(validateAiResult(reasonWithCrop)).rejects.toThrow('chỉ được dùng khi plate_crop_path là null');
+  });
+
   it('từ chối plate_crop_path dù null trong schema 1.0', async () => {
     const payload = makeAiResult();
     Object.assign(payload.events[0], { plate_crop_path: null });
-    await expect(validateAiResult(payload)).rejects.toThrow('chỉ được phép trong AI schema 1.1');
+    await expect(validateAiResult(payload)).rejects.toThrow('chỉ được phép từ AI schema 1.1 trở lên');
   });
 
   it('từ chối plate crop traversal và phần mở rộng không phải ảnh', async () => {
@@ -62,9 +94,16 @@ describe('validateAiResult', () => {
     await expect(validateAiResult(payload)).rejects.toThrow('Trùng event_id');
   });
 
-  it('từ chối unknown fields', async () => {
+  it('từ chối unknown fields và vẫn giữ forbidNonWhitelisted ở schema 1.2', async () => {
     const payload = makeAiResult();
-    Object.assign(payload.events[0], { forged: true });
+    payload.schema_version = '1.2';
+    payload.summary.schema_version = '1.2';
+    payload.events[0].schema_version = '1.2';
+    Object.assign(payload.events[0], {
+      plate_crop_path: null,
+      plate_crop_reason: 'NO_PLATE_DETECTED',
+      forged: true,
+    });
     await expect(validateAiResult(payload)).rejects.toBeInstanceOf(BadRequestException);
   });
 });

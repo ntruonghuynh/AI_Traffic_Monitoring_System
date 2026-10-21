@@ -20,7 +20,7 @@ export async function validateAiResult(payload: unknown): Promise<AiProcessingRe
   if (instance.schema_version !== instance.summary.schema_version) {
     throw new BadRequestException('schema_version không đồng nhất giữa root và summary');
   }
-  if (!['1.0', '1.1'].includes(instance.schema_version)) {
+  if (!['1.0', '1.1', '1.2'].includes(instance.schema_version)) {
     throw new BadRequestException(`Không hỗ trợ AI schema ${instance.schema_version}`);
   }
   if (instance.summary.status === AiProcessingStatus.Running) {
@@ -54,8 +54,21 @@ export async function validateAiResult(payload: unknown): Promise<AiProcessingRe
     const hasPlateCropField = sourceEvent !== null
       && typeof sourceEvent === 'object'
       && Object.prototype.hasOwnProperty.call(sourceEvent, 'plate_crop_path');
+    const hasPlateCropReasonField = sourceEvent !== null
+      && typeof sourceEvent === 'object'
+      && Object.prototype.hasOwnProperty.call(sourceEvent, 'plate_crop_reason');
     if (instance.schema_version === '1.0' && hasPlateCropField) {
-      throw new BadRequestException('plate_crop_path chỉ được phép trong AI schema 1.1');
+      throw new BadRequestException('plate_crop_path chỉ được phép từ AI schema 1.1 trở lên');
+    }
+    if (hasPlateCropReasonField && instance.schema_version !== '1.2') {
+      throw new BadRequestException('plate_crop_reason chỉ được phép trong AI schema 1.2');
+    }
+    if (hasPlateCropReasonField && sourceEvent && typeof sourceEvent === 'object'
+      && (sourceEvent as Record<string, unknown>).plate_crop_reason === null) {
+      throw new BadRequestException('plate_crop_reason phải là một trong các giá trị hỗ trợ');
+    }
+    if (event.plate_crop_reason && event.plate_crop_path !== null) {
+      throw new BadRequestException('plate_crop_reason chỉ được dùng khi plate_crop_path là null');
     }
     if (ids.has(event.event_id)) throw new BadRequestException(`Trùng event_id trong payload: ${event.event_id}`);
     ids.add(event.event_id);
