@@ -23,7 +23,7 @@
 
   async function request(path, options = {}) {
     const headers = new Headers(options.headers || {});
-    if (options.body !== undefined && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
+    if (options.body !== undefined && !options.rawBody && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
     if (options.withToken) {
       const token = getToken();
       if (!token) throw new ApiError(401, 'Vui lòng nhập và lưu internal token ở thanh trên để tải ảnh hoặc gửi review.');
@@ -31,7 +31,8 @@
     }
     let response;
     try {
-      response = await global.fetch(`${baseUrl()}${path}`, { ...options, headers, body: options.body === undefined ? undefined : JSON.stringify(options.body) });
+      const { rawBody, ...fetchOptions } = options;
+      response = await global.fetch(`${baseUrl()}${path}`, { ...fetchOptions, headers, body: options.body === undefined ? undefined : rawBody ? options.body : JSON.stringify(options.body) });
     } catch (error) {
       throw new ApiError(0, error && error.message ? error.message : 'Không kết nối được API. Kiểm tra backend và CORS.');
     }
@@ -55,6 +56,14 @@
     async getBlob(path) {
       const response = await request(path, { method: 'GET', withToken: true });
       return response.blob();
+    },
+    async postJson(path, body) {
+      const response = await request(path, { method: 'POST', withToken: true, body });
+      return response.json();
+    },
+    async postMultipart(path, formData) {
+      const response = await request(path, { method: 'POST', withToken: true, body: formData, rawBody: true });
+      return response.json();
     },
     async patchJson(path, body) {
       const response = await request(path, { method: 'PATCH', withToken: true, body });
