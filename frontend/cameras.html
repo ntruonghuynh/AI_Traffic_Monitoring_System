@@ -5,7 +5,7 @@
   <title>Quản lý Camera · Traffic Monitor</title>
   <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=4">
+  <link rel="stylesheet" href="css/style.css?v=7">
 </head>
 <body data-page="cameras">
   <div class="app-shell">
@@ -22,7 +22,7 @@
       <div class="sidebar-foot"><span class="sidebar-foot-dot"></span><span>Thông tin camera và video liên kết</span></div>
     </aside>
     <main class="main-area">
-      <header class="topbar"><div class="topbar-context"><span class="eyebrow">TRUNG TÂM ĐIỀU HÀNH</span><span class="topbar-separator">/</span><span>Quản lý Camera</span></div><div class="topbar-tools"><label class="token-control" for="token-field"><span class="token-label">TOKEN PHIÊN</span><input id="token-field" class="token-input" type="password" autocomplete="off" placeholder="Nhập internal token" aria-label="Internal token"></label><button class="button button-secondary button-small" id="save-token" type="button">Lưu token</button><div class="system-status" id="system-status" role="status" aria-live="polite"><span class="status-dot is-checking"></span><span class="system-label">Đang kiểm tra hệ thống</span></div></div></header>
+      <header class="topbar"><div class="topbar-context"><span class="eyebrow">KHÔNG GIAN LÀM VIỆC</span></div><div class="topbar-tools"><label class="token-control" for="token-field"><span class="token-label">TOKEN PHIÊN</span><input id="token-field" class="token-input" type="password" autocomplete="off" placeholder="Nhập internal token" aria-label="Internal token"></label><button class="button button-secondary button-small" id="save-token" type="button">Lưu token</button><div class="system-status" id="system-status" role="status" aria-live="polite"><span class="status-dot is-checking"></span><span class="system-label">Đang kiểm tra hệ thống</span></div></div></header>
       <div class="page-content cameras-page">
         <section class="page-heading"><div><div class="eyebrow">THIẾT BỊ &amp; NGUỒN VIDEO</div><h1>Quản lý Camera</h1><p class="page-subtitle">Quản lý thông tin và trạng thái camera</p></div><button class="button button-secondary" id="refresh-cameras" type="button"><span class="button-icon" data-icon="refresh"></span>Làm mới</button></section>
 
@@ -45,12 +45,12 @@
           </div>
           <div class="table-scroll"><table class="data-table"><thead><tr><th>TÊN</th><th>VỊ TRÍ</th><th>MÔ TẢ</th><th>LOẠI NGUỒN</th><th>TRẠNG THÁI</th><th>SỐ VIDEO</th><th></th></tr></thead><tbody id="cameras-body"></tbody></table></div>
           <div id="cameras-feedback" class="list-feedback" role="status" aria-live="polite"></div>
-          <div class="pagination"><span id="cameras-page-summary">—</span><div class="pagination-controls"><button class="page-button" id="cameras-previous" type="button" aria-label="Trang camera trước"><span data-icon="chevron-left"></span></button><span class="page-current" id="cameras-page-current">—</span><button class="page-button" id="cameras-next" type="button" aria-label="Trang camera sau"><span data-icon="chevron-right"></span></button></div></div>
+          <div class="pagination"><span id="cameras-page-summary">—</span><div class="pagination-controls"><button class="page-button btn-icon" id="cameras-previous" type="button" aria-label="Trang camera trước" title="Trang camera trước"><span data-icon="chevron-left"></span></button><span class="page-current" id="cameras-page-current">—</span><button class="page-button btn-icon" id="cameras-next" type="button" aria-label="Trang camera sau" title="Trang camera sau"><span data-icon="chevron-right"></span></button></div></div>
         </section>
         <footer class="page-footer">Số video và thông tin camera được hiển thị theo dữ liệu API.</footer>
       </div>
     </main>
   </div>
-  <script src="js/config.js"></script><script src="js/api.js?v=3"></script><script src="js/app.js?v=8"></script>
+  <script src="js/config.js"></script><script src="js/api.js?v=3"></script><script src="js/app.js?v=11"></script>
 </body>
 </html>
