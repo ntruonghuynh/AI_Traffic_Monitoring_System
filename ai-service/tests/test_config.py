@@ -1,4 +1,4 @@
-from traffic_ai.config import load_config
+from traffic_ai.config import default_config_path, load_config
 
 
 def test_environment_model_and_device_overrides(monkeypatch) -> None:
@@ -11,7 +11,9 @@ def test_environment_model_and_device_overrides(monkeypatch) -> None:
     assert config.plate_detection.min_crop_size == 20
 
 
-def test_plate_crop_minimum_size_can_be_overridden_in_yaml(tmp_path) -> None:
+def test_plate_crop_minimum_size_is_read_from_plate_detection_section(tmp_path) -> None:
     config_path = tmp_path / "custom.yaml"
-    config_path.write_text("plate_detection:\n  min_crop_size: 32\n", encoding="utf-8")
+    source = default_config_path().read_text(encoding="utf-8")
+    assert source.count("  min_crop_size: 20\n") == 1
+    config_path.write_text(source.replace("  min_crop_size: 20\n", "  min_crop_size: 32\n"), encoding="utf-8")
     assert load_config(config_path).plate_detection.min_crop_size == 32
