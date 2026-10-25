@@ -54,7 +54,7 @@ Không commit `.env`. `storage/`, generated Prisma Client, build và coverage đ
 
 ### X-Internal-Token
 
-Các route sau yêu cầu header `X-Internal-Token` trong mọi môi trường: `POST /api/v1/cameras`, `PATCH /api/v1/cameras/:id`, `DELETE /api/v1/cameras/:id`, `POST /api/v1/videos/upload`, `DELETE /api/v1/videos/:id`, `POST /api/v1/jobs`, `PATCH /api/v1/events/:id/review` và `GET /api/v1/evidence/:id/content`. Các route GET khác, health và Swagger vẫn công khai.
+Các route sau yêu cầu header `X-Internal-Token` trong mọi môi trường: `POST /api/v1/cameras`, `PATCH /api/v1/cameras/:id`, `DELETE /api/v1/cameras/:id`, `POST /api/v1/videos/upload`, `GET /api/v1/videos/:id/content`, `DELETE /api/v1/videos/:id`, `POST /api/v1/jobs`, `PATCH /api/v1/events/:id/review` và `GET /api/v1/evidence/:id/content`. Các route GET khác, health và Swagger vẫn công khai.
 
 Tạo token ngẫu nhiên bằng `openssl rand -hex 32`, rồi đặt vào `INTERNAL_API_TOKEN` trong `.env`. Không dùng giá trị mẫu trong production; server từ chối token mẫu ở môi trường đó. Token thật được chấp nhận trong production. Nếu token chưa cấu hình, route được bảo vệ trả 403; request thiếu hoặc sai token trả 401.
 
@@ -68,6 +68,8 @@ curl -X POST http://localhost:3000/api/v1/videos/upload \
   -H "X-Internal-Token: <token>" \
   -F 'file=@/path/to/input.mp4'
 ```
+
+`GET /api/v1/videos/:id/content` stream video đã tải lên, chỉ với internal token. Endpoint đặt `Content-Type` theo `Video.mimeType` (mặc định `video/mp4`), `Cache-Control: private, no-store`, và hỗ trợ một byte range (`Range: bytes=start-end` hoặc suffix range). Range hợp lệ trả `206` cùng `Content-Range`; range không hợp lệ trả `416`. Dùng `Range` cùng `X-Internal-Token` trong yêu cầu CORS; origin vẫn chỉ lấy từ `CORS_ORIGIN`.
 
 ## Scripts
 

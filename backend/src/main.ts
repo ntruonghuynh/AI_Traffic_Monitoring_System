@@ -25,7 +25,12 @@ async function bootstrap(): Promise<void> {
     .split(',')
     .map((origin) => origin.trim())
     .filter(Boolean);
-  app.enableCors({ origin: configuredOrigins, credentials: false });
+  app.enableCors({
+    origin: configuredOrigins,
+    credentials: false,
+    allowedHeaders: ['Content-Type', 'X-Internal-Token', 'Range', 'If-Range'],
+    exposedHeaders: ['Accept-Ranges', 'Content-Length', 'Content-Range'],
+  });
 
   const swaggerConfig = new DocumentBuilder()
     .setTitle('Traffic Monitoring Backend')
