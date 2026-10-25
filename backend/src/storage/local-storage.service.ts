@@ -1,10 +1,18 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { constants } from 'node:fs';
+import { constants, createReadStream } from 'node:fs';
+import type { ReadStream } from 'node:fs';
 import { copyFile, mkdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
-import { dirname, parse, relative, resolve, sep } from 'node:path';
+import { dirname, isAbsolute, parse, relative, resolve, sep } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { assertSafeRelativePath, resolveInside } from '../common/utils/path-security';
+
+export interface StorageByteRange { start: number; end: number }
+
+export interface StorageStreamFile {
+  size: number;
+  createReadStream(range?: StorageByteRange): ReadStream;
+}
 
 @Injectable()
 export class LocalStorageService {
@@ -51,6 +59,30 @@ export class LocalStorageService {
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new NotFoundException('Không tìm thấy asset');
       throw error;
+    }
+  }
+
+  async openStreamFile(storageKey: string): Promise<StorageStreamFile> {
+    try {
+      const target = resolveInside(this.root, storageKey);
+      const rootReal = await realpath(this.root);
+      const targetReal = await realpath(target);
+      const relation = relative(rootReal, targetReal);
+      if (relation === '..' || relation.startsWith(`..${sep}`) || isAbsolute(relation)) {
+        throw new NotFoundException('Không tìm thấy video');
+      }
+      const fileStat = await stat(targetReal);
+      if (!fileStat.isFile()) throw new NotFoundException('Không tìm thấy video');
+      return {
+        size: fileStat.size,
+        createReadStream: (range) => createReadStream(targetReal, range),
+      };
+    } catch (error) {
+      if (error instanceof NotFoundException) throw error;
+      if (error instanceof BadRequestException) throw new NotFoundException('Không tìm thấy video');
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === 'ENOENT' || code === 'ENOTDIR') throw new NotFoundException('Không tìm thấy video');
+      throw new InternalServerErrorException('Không thể đọc video');
     }
   }
 
