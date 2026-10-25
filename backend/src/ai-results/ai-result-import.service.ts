@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { ValidationError } from 'class-validator';
 import { extname } from 'node:path';
 import {
   DetectionEventType,
@@ -21,12 +22,79 @@ interface CopiedArtifact {
   newlyCopied: boolean;
 }
 
+const AI_RESULT_VALIDATION_PREFIX = 'AI result JSON không hợp lệ';
+const MAX_VALIDATION_ERRORS = 3;
+const MAX_VALIDATION_MESSAGE_LENGTH = 500;
+
+function isValidationError(value: unknown): value is ValidationError {
+  return value !== null && typeof value === 'object' && 'property' in value;
+}
+
+function flattenValidationErrors(errors: ValidationError[]): string[] {
+  const output: string[] = [];
+  const visit = (error: ValidationError, parentPath: string): void => {
+    const property = typeof error.property === 'string' ? error.property : '';
+    const fieldPath = property ? (parentPath ? `${parentPath}.${property}` : property) : parentPath;
+    for (const [constraint, message] of Object.entries(error.constraints ?? {})) {
+      if (output.length >= MAX_VALIDATION_ERRORS) return;
+      output.push(`${fieldPath || 'payload'}: ${message || constraint}`);
+    }
+    for (const child of error.children ?? []) {
+      if (output.length >= MAX_VALIDATION_ERRORS) return;
+      visit(child, fieldPath);
+    }
+  };
+  for (const error of errors) {
+    if (output.length >= MAX_VALIDATION_ERRORS) break;
+    visit(error, '');
+  }
+  return output;
+}
+
+function responseMessage(response: unknown): string | null {
+  if (typeof response === 'string') return response;
+  if (!response || typeof response !== 'object' || !('message' in response)) return null;
+  const message = (response as { message?: unknown }).message;
+  if (typeof message === 'string') return message;
+  if (Array.isArray(message)) return message.filter((item): item is string => typeof item === 'string').join('; ');
+  return null;
+}
+
+export function formatAiResultValidationError(error: unknown): string {
+  let reasons: string[] = [];
+  if (error instanceof BadRequestException) {
+    const response = error.getResponse();
+    const details = response && typeof response === 'object' && 'details' in response
+      ? (response as { details?: unknown }).details
+      : null;
+    if (Array.isArray(details) && details.every(isValidationError)) {
+      reasons = flattenValidationErrors(details);
+    }
+    if (!reasons.length) {
+      const message = responseMessage(response);
+      if (message && message !== AI_RESULT_VALIDATION_PREFIX) reasons = [message];
+      else if (error.message && error.message !== AI_RESULT_VALIDATION_PREFIX) reasons = [error.message];
+    }
+  } else if (isValidationError(error)) {
+    reasons = flattenValidationErrors([error]);
+  }
+
+  const suffix = reasons.length ? `: ${reasons.slice(0, MAX_VALIDATION_ERRORS).join('; ')}` : '';
+  return safeError(`${AI_RESULT_VALIDATION_PREFIX}${suffix}`).slice(0, MAX_VALIDATION_MESSAGE_LENGTH);
+}
+
 @Injectable()
 export class AiResultImportService {
   constructor(private readonly prisma: PrismaService, private readonly storage: LocalStorageService) {}
 
   async import(jobId: string, payload: unknown, trustedResultRoot: string) {
-    const result = await validateAiResult(payload);
+    let result;
+    try {
+      result = await validateAiResult(payload);
+    } catch (error) {
+      if (!(error instanceof BadRequestException) && !isValidationError(error)) throw error;
+      throw new BadRequestException(formatAiResultValidationError(error));
+    }
     if (result.summary.job_id !== jobId) {
       throw new BadRequestException('summary.job_id không trùng --job-id');
     }
