@@ -654,11 +654,26 @@
     image.style.height = `${image.naturalHeight * scale}px`;
   }
 
-  function addMissingCropCard(container) {
+  function plateCropReasonLabel(reason) {
+    const labels = {
+      TOO_SMALL: 'Biển số quá nhỏ',
+      NO_PLATE_DETECTED: 'Không phát hiện biển số',
+      DETECTOR_ERROR: 'Lỗi bộ phát hiện biển số',
+    };
+    if (labels[reason]) return labels[reason];
+    if (reason) return `Không rõ (${reason})`;
+    return 'Không rõ (job tạo trước khi ghi lý do)';
+  }
+
+  function addMissingCropCard(container, event) {
     const card = make('article', 'evidence-card');
     const head = make('div', 'evidence-card-head');
     head.append(make('strong', '', 'Ảnh crop biển số'), make('span', 'evidence-type', 'PLATE_CROP'));
-    const message = make('div', 'evidence-placeholder missing-crop-message', 'Không có ảnh crop biển số cho sự kiện này');
+    const message = make('div', 'evidence-placeholder missing-crop-message');
+    message.append(
+      make('span', '', 'Không có ảnh crop biển số cho sự kiện này'),
+      make('span', 'missing-crop-reason', plateCropReasonLabel(event && event.rawPayload && event.rawPayload.plate_crop_reason)),
+    );
     card.append(head, message);
     container.append(card);
   }
@@ -843,7 +858,7 @@
         const crop = list.find((asset) => asset.assetType === 'PLATE_CROP');
         if (fullFrame) addEvidenceCard(evidence, fullFrame);
         if (crop) addEvidenceCard(evidence, crop);
-        else addMissingCropCard(evidence);
+        else addMissingCropCard(evidence, eventRecord);
       } catch (error) {
         evidence.replaceChildren();
         const details = errorMessage(error);
@@ -979,6 +994,292 @@
     }
     const tenths = (bytes * 10n + unit.divisor / 2n) / unit.divisor;
     return `${tenths / 10n}.${tenths % 10n} ${unit.name}`;
+  }
+
+  function initPlates() {
+    const jobId = new URLSearchParams(location.search).get('jobId');
+    const jobIdValue = document.getElementById('plates-job-id');
+    const summary = document.getElementById('plates-summary');
+    const summaryFeedback = document.getElementById('plates-summary-feedback');
+    const cropGrid = document.getElementById('plates-crop-grid');
+    const cropFeedback = document.getElementById('plates-crop-feedback');
+    const missingBody = document.getElementById('plates-missing-body');
+    const missingFeedback = document.getElementById('plates-missing-feedback');
+    const refresh = document.getElementById('refresh-plates');
+    const items = [];
+    const visibleItems = new Set();
+    const queue = [];
+    let activeRequests = 0;
+    let loadSequence = 0;
+    let disposed = false;
+    let observer = null;
+
+    if (jobIdValue) jobIdValue.textContent = jobId || '—';
+
+    function reasonFor(event) {
+      const payload = event && event.rawPayload;
+      const reason = payload && typeof payload === 'object' ? payload.plate_crop_reason : null;
+      return typeof reason === 'string' && reason ? reason : null;
+    }
+
+    function reasonLabel(reason) {
+      return plateCropReasonLabel(reason);
+    }
+
+    function cropAssetFor(event) {
+      const assets = Array.isArray(event && event.evidenceAssets) ? event.evidenceAssets : [];
+      return assets.find((asset) => asset && asset.assetType === 'PLATE_CROP' && asset.id) || null;
+    }
+
+    function confidenceFor(event) {
+      const value = event && event.plateConfidence;
+      if (typeof value !== 'number' || !Number.isFinite(value)) return make('span', 'confidence-value confidence-normal', '—');
+      return confidenceValue(value);
+    }
+
+    function videoTime(value) {
+      return typeof value === 'number' && Number.isFinite(value) ? `${value.toFixed(3)} giây` : '—';
+    }
+
+    function setItemMessage(item, message, isError = false, statusCode = null) {
+      item.placeholder.replaceChildren();
+      const text = statusCode ? `HTTP ${statusCode} · ${message}` : message;
+      item.placeholder.append(make('span', isError ? 'plate-image-error' : '', text));
+      item.image.hidden = true;
+      item.frame.replaceChildren(item.placeholder);
+      item.retry.hidden = !isError;
+    }
+
+    function pumpImageQueue() {
+      if (disposed || !ApiClient.getToken()) return;
+      while (activeRequests < 6 && queue.length) {
+        const item = queue.shift();
+        if (!item || item.state !== 'queued' || !visibleItems.has(item)) continue;
+        item.state = 'loading';
+        setItemMessage(item, 'Đang tải ảnh crop…');
+        activeRequests += 1;
+        ApiClient.getBlob(`/evidence/${encodeURIComponent(item.asset.id)}/content`)
+          .then((blob) => {
+            if (disposed || item.generation !== loadSequence) return;
+            const objectUrl = URL.createObjectURL(blob);
+            activeObjectUrls.add(objectUrl);
+            item.objectUrl = objectUrl;
+            item.image.src = objectUrl;
+            item.image.hidden = false;
+            item.frame.replaceChildren(item.image);
+            item.retry.hidden = true;
+            item.state = 'loaded';
+          })
+          .catch((error) => {
+            if (disposed || item.generation !== loadSequence) return;
+            const details = errorMessage(error);
+            const authError = details.statusCode === 401 || details.statusCode === 403;
+            const message = authError
+              ? 'Cần internal token để tải ảnh crop. Hãy nhập token ở thanh trên.'
+              : details.message;
+            setItemMessage(item, message, true, details.statusCode);
+            item.state = 'error';
+          })
+          .finally(() => {
+            activeRequests -= 1;
+            pumpImageQueue();
+          });
+      }
+    }
+
+    function queueImage(item) {
+      if (!ApiClient.getToken()) {
+        setItemMessage(item, 'Cần internal token để tải ảnh crop. Hãy nhập token ở thanh trên.');
+        return;
+      }
+      if (item.state !== 'idle') return;
+      item.state = 'queued';
+      queue.push(item);
+      pumpImageQueue();
+    }
+
+    function makeCropCard(event, asset) {
+      const card = make('article', 'plate-crop-card');
+      const link = make('a', 'plate-crop-link');
+      link.href = `violation.html?id=${encodeURIComponent(event.id || '')}`;
+      link.setAttribute('aria-label', `Mở sự kiện ${event.id || ''}`);
+      const frame = make('div', 'plate-crop-frame');
+      const image = make('img', 'pixelated-image');
+      image.alt = 'Ảnh crop biển số';
+      image.loading = 'lazy';
+      const placeholder = make('div', 'plate-crop-placeholder');
+      const retry = make('button', 'button button-secondary button-small plate-crop-retry', 'Thử tải lại');
+      retry.type = 'button';
+      retry.hidden = true;
+      const details = make('div', 'plate-crop-details');
+      const top = make('div', 'plate-crop-meta');
+      top.append(make('strong', '', event.vehicleType || '—'), make('span', 'mono', videoTime(event.timestampSeconds)));
+      const ocr = make('div', 'plate-crop-ocr');
+      const plateNumber = event.plateNumber;
+      if (plateNumber !== null && plateNumber !== undefined && plateNumber !== '') {
+        ocr.append(make('strong', 'plate-crop-result mono', plateNumber));
+      } else {
+        ocr.append(make('span', 'plate-unreadable', 'Không đọc được'));
+        if (event.plateRawText) ocr.append(make('span', 'plate-raw', `OCR thô: ${event.plateRawText}`));
+      }
+      const confidence = make('div', 'plate-crop-confidence');
+      confidence.append(make('span', 'field-label', 'ĐỘ TIN CẬY OCR'), confidenceFor(event));
+      details.append(top, ocr, confidence);
+      link.append(frame, details);
+      card.append(link, retry);
+      const item = { asset, card, frame, image, placeholder, retry, state: 'idle', objectUrl: null, generation: loadSequence };
+      setItemMessage(item, ApiClient.getToken() ? 'Ảnh sẽ tải khi cuộn đến đây.' : 'Cần internal token để tải ảnh crop. Hãy nhập token ở thanh trên.');
+      retry.addEventListener('click', () => {
+        item.state = 'idle';
+        queueImage(item);
+      });
+      items.push(item);
+      if (observer) observer.observe(card);
+      else {
+        visibleItems.add(item);
+        queueImage(item);
+      }
+      return card;
+    }
+
+    function renderMissingRows(events) {
+      const missing = events.filter((event) => !cropAssetFor(event));
+      missingBody.replaceChildren(...missing.map((event) => {
+        const row = make('tr');
+        const id = make('a', 'event-link mono', event.id || '—');
+        id.href = `violation.html?id=${encodeURIComponent(event.id || '')}`;
+        const idCell = make('td'); idCell.append(id);
+        row.append(idCell, make('td', '', event.vehicleType || '—'), make('td', '', reasonLabel(reasonFor(event))), make('td', 'mono', videoTime(event.timestampSeconds)));
+        return row;
+      }));
+      missingFeedback.replaceChildren();
+      if (!missing.length) addFeedback(missingFeedback, 'Không có sự kiện thiếu ảnh crop', 'Tất cả sự kiện trong job đều có ảnh crop hoặc danh sách hiện đang rỗng.');
+      return missing;
+    }
+
+    function renderSummary(events, total) {
+      const crops = events.filter((event) => cropAssetFor(event)).length;
+      const missing = events.filter((event) => !cropAssetFor(event));
+      const reasonCounts = new Map();
+      for (const event of missing) {
+        const label = reasonLabel(reasonFor(event));
+        reasonCounts.set(label, (reasonCounts.get(label) || 0) + 1);
+      }
+      const cards = [
+        ['TỔNG SỰ KIỆN', total],
+        ['CÓ ẢNH CROP', crops],
+        ['KHÔNG CÓ ẢNH CROP', missing.length],
+      ].map(([label, value]) => {
+        const card = make('article', 'plate-summary-card panel');
+        card.append(make('span', 'field-label', label), make('strong', 'plate-summary-value mono', value));
+        return card;
+      });
+      const reasons = make('div', 'plate-reason-summary');
+      for (const [label, count] of reasonCounts) reasons.append(make('span', 'filter-chip', `${label} · ${count}`));
+      summary.replaceChildren(...cards, reasons);
+    }
+
+    function setupObserver() {
+      if (observer) observer.disconnect();
+      visibleItems.clear();
+      if (typeof IntersectionObserver !== 'function') {
+        observer = null;
+        return;
+      }
+      observer = new IntersectionObserver((entries) => {
+        for (const entry of entries) {
+          const item = items.find((candidate) => candidate.card === entry.target);
+          if (!item) continue;
+          if (entry.isIntersecting) {
+            visibleItems.add(item);
+            queueImage(item);
+          } else visibleItems.delete(item);
+        }
+      }, { rootMargin: '160px 0px' });
+    }
+
+    async function load() {
+      const sequence = ++loadSequence;
+      if (observer) observer.disconnect();
+      observer = null;
+      for (const item of items) {
+        if (item.objectUrl) {
+          URL.revokeObjectURL(item.objectUrl);
+          activeObjectUrls.delete(item.objectUrl);
+        }
+        item.image.removeAttribute('src');
+      }
+      items.length = 0;
+      visibleItems.clear();
+      queue.length = 0;
+      cropGrid.replaceChildren();
+      missingBody.replaceChildren();
+      summary.replaceChildren();
+      addFeedback(summaryFeedback, 'Đang tải sự kiện của job', 'Đang lấy danh sách sự kiện và trạng thái crop từ API.');
+      addFeedback(cropFeedback, 'Đang tải danh sách ảnh crop', 'Ảnh chỉ được tải khi xuất hiện gần vùng nhìn thấy.');
+      addFeedback(missingFeedback, 'Đang tải sự kiện không có ảnh crop', '');
+      if (!jobId) {
+        addFeedback(summaryFeedback, 'Thiếu jobId', 'Mở trang với plates.html?jobId=<id>.', 'error');
+        cropFeedback.replaceChildren(); missingFeedback.replaceChildren();
+        return;
+      }
+      try {
+        const limit = 100;
+        const query = new URLSearchParams({ jobId, page: '1', limit: String(limit) });
+        const first = await ApiClient.getJson(`/events?${query.toString()}`);
+        if (sequence !== loadSequence) return;
+        const allEvents = Array.isArray(first && first.data) ? [...first.data] : [];
+        const meta = first && first.meta ? first.meta : { total: allEvents.length, totalPages: allEvents.length === limit ? 2 : 1 };
+        const totalPages = Number(meta.totalPages) || (allEvents.length ? 1 : 0);
+        for (let page = 2; page <= totalPages; page += 1) {
+          const pageQuery = new URLSearchParams({ jobId, page: String(page), limit: String(limit) });
+          const result = await ApiClient.getJson(`/events?${pageQuery.toString()}`);
+          if (sequence !== loadSequence) return;
+          if (Array.isArray(result && result.data)) allEvents.push(...result.data);
+        }
+        const total = Number.isFinite(Number(meta.total)) ? Number(meta.total) : allEvents.length;
+        renderSummary(allEvents, total);
+        summaryFeedback.replaceChildren();
+        const cropEvents = allEvents.filter((event) => cropAssetFor(event));
+        setupObserver();
+        cropGrid.replaceChildren(...cropEvents.map((event) => makeCropCard(event, cropAssetFor(event))));
+        cropFeedback.replaceChildren();
+        if (!cropEvents.length) addFeedback(cropFeedback, 'Chưa có ảnh crop', 'API chưa trả về PLATE_CROP cho job này.');
+        const missing = renderMissingRows(allEvents);
+        if (!allEvents.length) {
+          addFeedback(summaryFeedback, 'Job chưa có sự kiện', 'API chưa trả về sự kiện nào cho job này.');
+          cropFeedback.replaceChildren(); missingFeedback.replaceChildren();
+          addFeedback(cropFeedback, 'Chưa có ảnh crop', 'Không có sự kiện để hiển thị.');
+          addFeedback(missingFeedback, 'Chưa có sự kiện', 'Không có sự kiện để hiển thị.');
+        }
+      } catch (error) {
+        if (sequence !== loadSequence) return;
+        const details = errorMessage(error);
+        const message = details.statusCode === 401 || details.statusCode === 403
+          ? `${details.message} Vui lòng kiểm tra internal token nếu API yêu cầu xác thực.`
+          : details.message;
+        addFeedback(summaryFeedback, details.statusCode === 401 || details.statusCode === 403 ? 'Cần internal token' : 'Không tải được sự kiện', message, 'error', details.statusCode, load);
+        addFeedback(cropFeedback, 'Không tải được ảnh crop', 'Danh sách sự kiện chưa tải thành công.', 'error', details.statusCode);
+        addFeedback(missingFeedback, 'Không tải được sự kiện không có ảnh crop', 'Danh sách sự kiện chưa tải thành công.', 'error', details.statusCode);
+      }
+    }
+
+    window.addEventListener('internal-token-change', () => {
+      for (const item of visibleItems) if (item.state === 'idle') queueImage(item);
+    });
+    refresh.addEventListener('click', load);
+    window.addEventListener('pagehide', () => {
+      disposed = true;
+      if (observer) observer.disconnect();
+      for (const item of items) {
+        if (item.objectUrl) {
+          URL.revokeObjectURL(item.objectUrl);
+          activeObjectUrls.delete(item.objectUrl);
+          item.objectUrl = null;
+        }
+      }
+    }, { once: true });
+    load();
   }
 
   function initJobs() {
@@ -1143,7 +1444,7 @@
     }
 
     function updateJobRow(entry) {
-      const { job, status, elapsed, error, violationLink } = entry;
+      const { job, status, elapsed, error, violationLink, platesLink } = entry;
       status.className = `status-badge ${jobStatusTone(job.status)}`;
       status.textContent = jobStatusLabel(job.status);
       elapsed.textContent = formatJobRuntime(job);
@@ -1151,6 +1452,8 @@
       violationLink.href = `violations.html?jobId=${encodeURIComponent(job.id)}`;
       violationLink.textContent = 'Xem vi phạm';
       violationLink.hidden = !job.id;
+      platesLink.href = `plates.html?jobId=${encodeURIComponent(job.id || '')}`;
+      platesLink.hidden = !job.id;
     }
 
     function renderJob(job) {
@@ -1171,13 +1474,16 @@
       const error = make('span', 'job-error');
       const violationLink = make('a', 'text-button job-events-link', 'Xem vi phạm');
       violationLink.href = `violations.html?jobId=${encodeURIComponent(job.id || '')}`;
+      const platesLink = make('a', 'text-button job-events-link', 'Xem biển số');
+      platesLink.href = `plates.html?jobId=${encodeURIComponent(job.id || '')}`;
       const statusCell = make('td'); statusCell.append(status);
       const elapsedCell = make('td'); elapsedCell.append(elapsed);
       const errorCell = make('td'); errorCell.append(error);
-      const actionCell = make('td'); actionCell.append(violationLink);
+      const actionCell = make('td');
+      const jobLinks = make('div', 'job-row-links'); jobLinks.append(violationLink, platesLink); actionCell.append(jobLinks);
       row.append(make('td', 'mono', ''), video, statusCell, elapsedCell, errorCell, actionCell);
       row.firstElementChild.append(idLink);
-      const entry = { job, row, status, elapsed, error, violationLink };
+      const entry = { job, row, status, elapsed, error, violationLink, platesLink };
       updateJobRow(entry);
       jobRows.set(job.id, entry);
       if (job.status === 'PENDING' || job.status === 'PROCESSING') pollingJobs.add(job.id);
@@ -1572,6 +1878,7 @@
   checkHealth();
   if (document.body.dataset.page === 'violations') initList();
   if (document.body.dataset.page === 'violation') initDetail();
+  if (document.body.dataset.page === 'plates') initPlates();
   if (document.body.dataset.page === 'jobs') initJobs();
   if (document.body.dataset.page === 'dashboard') initDashboard();
   if (document.body.dataset.page === 'cameras') initCameras();

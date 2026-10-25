@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#F3F6FB">
+  <title>Biển số theo job · Traffic Monitor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css?v=8">
+</head>
+<body data-page="plates">
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Điều hướng chính">
+      <a class="brand" href="violations.html" aria-label="Traffic Monitor"><span class="brand-mark" aria-hidden="true">TM</span><span class="brand-copy"><strong>Traffic Monitor</strong><small>HỆ THỐNG GIÁM SÁT</small></span></a>
+      <div class="sidebar-caption">KHÔNG GIAN LÀM VIỆC</div>
+      <nav class="nav-list">
+        <a class="nav-item" href="index.html"><span class="icon-wrap" data-icon="grid"></span><span>Tổng quan</span></a>
+        <a class="nav-item" href="violations.html"><span class="icon-wrap" data-icon="list"></span><span>Danh sách vi phạm</span></a>
+        <a class="nav-item is-active" href="jobs.html" aria-current="page"><span class="icon-wrap" data-icon="video"></span><span>Video &amp; Tiến trình</span></a>
+        <a class="nav-item" href="cameras.html"><span class="icon-wrap" data-icon="camera"></span><span>Quản lý Camera</span></a>
+        <a class="nav-item" href="jobs.html#token-field"><span class="icon-wrap" data-icon="settings"></span><span>Cài đặt &amp; Token</span></a>
+      </nav>
+      <div class="sidebar-foot"><span class="sidebar-foot-dot"></span><span>Ảnh crop biển số dùng để hỗ trợ xác minh</span></div>
+    </aside>
+    <main class="main-area">
+      <header class="topbar">
+        <div class="topbar-context"><a href="jobs.html" class="back-link">Video &amp; Tiến trình</a></div>
+        <div class="topbar-tools">
+          <label class="token-control" for="token-field"><span class="token-label">TOKEN PHIÊN</span><input id="token-field" class="token-input" type="password" autocomplete="off" placeholder="Nhập internal token" aria-label="Internal token"></label>
+          <button class="button button-secondary button-small" id="save-token" type="button">Lưu token</button>
+          <div class="system-status" id="system-status" role="status" aria-live="polite"><span class="status-dot is-checking"></span><span class="system-label">Đang kiểm tra hệ thống</span></div>
+        </div>
+      </header>
+      <div class="page-content plates-page">
+        <section class="page-heading">
+          <div><div class="eyebrow">ẢNH CROP THEO TIẾN TRÌNH</div><h1>Biển số theo job</h1><p class="page-subtitle">Ứng viên cần người xác minh · Job <span id="plates-job-id" class="mono">—</span></p></div>
+          <button class="button button-secondary" id="refresh-plates" type="button"><span class="button-icon" data-icon="refresh"></span>Làm mới</button>
+        </section>
+
+        <section class="panel plates-summary-panel" aria-label="Tóm tắt job">
+          <div class="panel-heading"><div><h2>Tóm tắt job</h2><p>Số liệu tính từ sự kiện do API trả về</p></div></div>
+          <div id="plates-summary-feedback" class="list-feedback" role="status" aria-live="polite"></div>
+          <div id="plates-summary" class="plate-summary-grid"></div>
+        </section>
+
+        <section class="panel plates-section" aria-label="Ảnh crop biển số">
+          <div class="panel-heading"><div><h2>Ảnh crop biển số</h2><p>Bấm vào thẻ để mở chi tiết sự kiện</p></div></div>
+          <div id="plates-crop-feedback" class="list-feedback" role="status" aria-live="polite"></div>
+          <div id="plates-crop-grid" class="plate-crop-grid"></div>
+          <p class="plates-privacy-note">Ảnh crop biển số là dữ liệu cá nhân; chỉ sử dụng theo quyền truy cập và mục đích xác minh được phân quyền.</p>
+        </section>
+
+        <section class="table-panel panel plates-section" aria-label="Sự kiện không có ảnh crop">
+          <div class="table-toolbar"><div><h2>Không có ảnh crop</h2><p>Lý do theo dữ liệu ghi nhận của job</p></div></div>
+          <div class="table-scroll"><table class="data-table plates-missing-table"><thead><tr><th>MÃ EVENT</th><th>LOẠI XE</th><th>LÝ DO</th><th>GIÂY TRONG VIDEO</th></tr></thead><tbody id="plates-missing-body"></tbody></table></div>
+          <div id="plates-missing-feedback" class="list-feedback" role="status" aria-live="polite"></div>
+        </section>
+        <footer class="page-footer">Thông tin biển số và độ tin cậy do API cung cấp; nhãn không xác nhận vi phạm.</footer>
+      </div>
+    </main>
+  </div>
+  <script src="js/config.js"></script>
+  <script src="js/api.js?v=3"></script>
+  <script src="js/app.js?v=12"></script>
+</body>
+</html>
