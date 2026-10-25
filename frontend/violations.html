@@ -29,7 +29,7 @@
             <label class="field"><span>TRẠNG THÁI REVIEW</span><select name="reviewStatus"><option value="">Tất cả trạng thái</option><option value="PENDING_REVIEW">Chờ xác minh</option><option value="VERIFIED_CROSSING">Đã xác minh</option><option value="REJECTED_CANDIDATE">Đã từ chối</option></select></label>
             <label class="field"><span>LOẠI XE</span><input name="vehicleType" type="text" placeholder="Ô tô, xe máy…"></label>
             <label class="field"><span>BIỂN SỐ</span><input name="plateNumber" type="text" placeholder="Nhập biển số"></label>
-            <label class="field"><span>CONFIDENCE TỐI THIỂU</span><input name="minConfidence" type="number" min="0" max="1" step="0.01" placeholder="0.00–1.00"></label>
+            <label class="field"><span title="Độ tin cậy do bộ phát hiện phương tiện trả về; đây không phải độ tin cậy OCR biển số.">ĐỘ TIN CẬY PHÁT HIỆN TỐI THIỂU</span><input name="minConfidence" type="number" min="0" max="1" step="0.01" placeholder="0.00–1.00"></label>
             <details class="advanced-filter-details"><summary>Bộ lọc nâng cao</summary><div class="advanced-filter-grid"><label class="field"><span>TỪ NGÀY</span><input name="from" type="date"></label><label class="field"><span>ĐẾN NGÀY</span><input name="to" type="date"></label>
             <label class="field"><span>CÓ BIỂN SỐ</span><select name="hasPlate"><option value="">Tất cả</option><option value="true">Có biển số</option><option value="false">Không có biển số</option></select></label>
             <label class="field"><span>CAMERA ID</span><input name="cameraId" type="text" placeholder="UUID camera"></label><label class="field"><span>JOB ID</span><input name="jobId" type="text" placeholder="UUID job"></label><label class="field"><span>VIDEO ID</span><input name="videoId" type="text" placeholder="UUID video"></label></div></details>
@@ -38,12 +38,12 @@
           <div id="active-filter-chips" class="filter-chips" aria-live="polite" aria-label="Bộ lọc đang áp dụng"></div>
         </section>
         <section class="table-panel panel" aria-label="Kết quả sự kiện"><div class="table-toolbar"><div><h2>Sự kiện phát hiện</h2><p id="result-count">Đang tải danh sách…</p></div><label class="page-size">Số dòng<select id="page-size" aria-label="Số dòng mỗi trang"><option value="10">10</option><option value="20" selected>20</option><option value="50">50</option></select></label></div>
-          <div class="table-scroll"><table class="data-table"><thead><tr><th>MÃ EVENT</th><th>THỜI ĐIỂM GHI NHẬN</th><th>GIÂY TRONG VIDEO</th><th>LOẠI XE</th><th>BIỂN SỐ</th><th>CONFIDENCE</th><th>TRẠNG THÁI REVIEW</th></tr></thead><tbody id="events-body"></tbody></table></div>
+          <div class="table-scroll"><table class="data-table"><thead><tr><th>MÃ EVENT</th><th>THỜI ĐIỂM GHI NHẬN</th><th>GIÂY TRONG VIDEO</th><th>LOẠI XE</th><th>BIỂN SỐ</th><th title="Độ tin cậy do bộ phát hiện phương tiện trả về; đây không phải độ tin cậy OCR biển số.">ĐỘ TIN CẬY PHÁT HIỆN</th><th>TRẠNG THÁI REVIEW</th></tr></thead><tbody id="events-body"></tbody></table></div>
           <div class="list-feedback" id="list-feedback" role="status" aria-live="polite"></div><div class="pagination"><span id="page-summary">—</span><div class="pagination-controls"><button class="page-button btn-icon" id="previous-page" type="button" aria-label="Trang trước" title="Trang trước"><span data-icon="chevron-left"></span></button><span class="page-current" id="page-current">—</span><button class="page-button btn-icon" id="next-page" type="button" aria-label="Trang sau" title="Trang sau"><span data-icon="chevron-right"></span></button></div></div>
         </section><footer class="page-footer">AI chỉ đưa ra ứng viên. Quyết định review thuộc về người có thẩm quyền.</footer>
       </div>
     </main>
   </div>
-  <script src="js/config.js"></script><script src="js/api.js?v=3"></script><script src="js/app.js?v=12"></script>
+  <script src="js/config.js"></script><script src="js/api.js?v=3"></script><script src="js/app.js?v=14"></script>
 </body>
 </html>
