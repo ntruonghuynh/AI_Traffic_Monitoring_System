@@ -45,14 +45,14 @@
           <div id="plates-summary" class="plate-summary-grid"></div>
         </section>
 
-        <section class="panel plates-section" aria-label="Ảnh crop biển số">
+        <section id="plates-crop-section" class="panel plates-section" aria-label="Ảnh crop biển số" hidden>
           <div class="panel-heading"><div><h2>Ảnh crop biển số</h2><p>Bấm vào thẻ để mở chi tiết sự kiện</p></div></div>
           <div id="plates-crop-feedback" class="list-feedback" role="status" aria-live="polite"></div>
           <div id="plates-crop-grid" class="plate-crop-grid"></div>
           <p class="plates-privacy-note">Ảnh crop biển số là dữ liệu cá nhân; chỉ sử dụng theo quyền truy cập và mục đích xác minh được phân quyền.</p>
         </section>
 
-        <section class="table-panel panel plates-section" aria-label="Sự kiện không có ảnh crop">
+        <section id="plates-missing-section" class="table-panel panel plates-section" aria-label="Sự kiện không có ảnh crop" hidden>
           <div class="table-toolbar"><div><h2>Không có ảnh crop</h2><p>Lý do theo dữ liệu ghi nhận của job</p></div></div>
           <div class="table-scroll"><table class="data-table plates-missing-table"><thead><tr><th>MÃ EVENT</th><th>LOẠI XE</th><th>LÝ DO</th><th>GIÂY TRONG VIDEO</th></tr></thead><tbody id="plates-missing-body"></tbody></table></div>
           <div id="plates-missing-feedback" class="list-feedback" role="status" aria-live="polite"></div>
@@ -63,6 +63,6 @@
   </div>
   <script src="js/config.js"></script>
   <script src="js/api.js?v=3"></script>
-  <script src="js/app.js?v=12"></script>
+  <script src="js/app.js?v=14"></script>
 </body>
 </html>
