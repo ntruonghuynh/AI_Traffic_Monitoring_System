@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Iterable
+from typing import Any, Iterable, Mapping
 
 import cv2
 
@@ -65,6 +65,10 @@ def annotate_frame(
     events: Iterable[LineCrossingEvent] = (),
     plates: Iterable[PlateDetection] = (),
     highlight_track_id: int | None = None,
+    candidate_labels: Mapping[int, str] | None = None,
+    event_plates: Mapping[int, PlateDetection] | None = None,
+    video_timestamp_seconds: float | None = None,
+    event_count: int | None = None,
 ) -> Any:
     rendered = frame.copy()
     event_track_ids = {event.track_id for event in events}
@@ -91,6 +95,14 @@ def annotate_frame(
                     (x1, y1, x2, y2),
                 )
             continue
+        if candidate_labels is not None:
+            label = candidate_labels.get(observation.track_id) if observation.track_id is not None else None
+            if label:
+                cv2.rectangle(rendered, (x1, y1), (x2, y2), (0, 0, 255), 3)
+                _draw_candidate_label(rendered, label, (x1, y1, x2, y2))
+            else:
+                cv2.rectangle(rendered, (x1, y1), (x2, y2), (192, 192, 192), 1)
+            continue
         is_event = observation.track_id in event_track_ids
         color = (0, 0, 255) if is_event else (0, 200, 255)
         cv2.rectangle(rendered, (x1, y1), (x2, y2), color, 2)
@@ -106,7 +118,8 @@ def annotate_frame(
             color,
             2,
         )
-    for plate in plates:
+    frame_plates = event_plates.values() if candidate_labels is not None and event_plates is not None else plates
+    for plate in frame_plates:
         x1, y1, x2, y2 = _integer_bbox(plate.bbox)
         cv2.rectangle(rendered, (x1, y1), (x2, y2), (255, 0, 0), 2)
     for event in events:
@@ -117,6 +130,20 @@ def annotate_frame(
             cv2.FONT_HERSHEY_SIMPLEX,
             0.9,
             (0, 0, 255),
+            2,
+        )
+    if candidate_labels is not None and video_timestamp_seconds is not None and event_count is not None:
+        elapsed = max(0, int(video_timestamp_seconds))
+        label = f"{elapsed // 60:02d}:{elapsed % 60:02d}  EVENTS {event_count}"
+        text_size, baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.65, 2)
+        cv2.rectangle(rendered, (8, 8), (text_size[0] + 20, text_size[1] + baseline + 18), (40, 50, 60), -1)
+        cv2.putText(
+            rendered,
+            label,
+            (16, 16 + text_size[1]),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.65,
+            (255, 255, 255),
             2,
         )
     return rendered

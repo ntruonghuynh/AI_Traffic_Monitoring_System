@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -82,13 +83,13 @@ class VideoProcessor:
             max_missing_frames=self.config.line_crossing.max_missing_frames,
             allow_multiple_crossings=self.config.line_crossing.allow_multiple_crossings,
         )
-        writer = ResultWriter(output_dir, self.config.output)
+        effective_job_id = job_id or str(uuid.uuid4())
+        writer = ResultWriter(output_dir, self.config.output, job_id=effective_job_id)
         artifacts = OutputArtifacts(
             result_json="results.json",
             legacy_csv="violators.csv" if self.config.output.legacy_csv else None,
             legacy_sqlite="violations.db" if self.config.output.legacy_sqlite else None,
         )
-        effective_job_id = job_id or str(uuid.uuid4())
         summary = ProcessingSummary(
             job_id=effective_job_id,
             status=ProcessingStatus.RUNNING,
@@ -97,10 +98,12 @@ class VideoProcessor:
             artifacts=artifacts,
         )
         events: list[LineCrossingEvent] = []
+        events_by_track: dict[int, LineCrossingEvent] = {}
+        annotated_draw_seconds = 0.0
         self.vehicle_tracker.reset()
 
         try:
-            artifacts.annotated_video = writer.open_annotated_video(metadata)
+            writer.open_annotated_video(metadata, job_id=effective_job_id)
             frame_index = 0
             while True:
                 success, frame = capture.read()
@@ -115,7 +118,6 @@ class VideoProcessor:
                 )
 
                 frame_events: list[LineCrossingEvent] = []
-                frame_plates: list[PlateDetection] = []
                 frame_event_plates: dict[str, PlateDetection] = {}
                 frame_plate_crops: dict[str, Any] = {}
                 for transition in transitions:
@@ -125,8 +127,6 @@ class VideoProcessor:
                         job_id=effective_job_id,
                         track_id=transition.track_id,
                     )
-                    if plate_detection is not None:
-                        frame_plates.append(plate_detection)
                     event = LineCrossingEvent(
                         event_id=str(uuid.uuid4()),
                         track_id=transition.track_id,
@@ -142,19 +142,41 @@ class VideoProcessor:
                     )
                     frame_events.append(event)
                     events.append(event)
+                    events_by_track[event.track_id] = event
                     if plate_detection is not None:
                         frame_event_plates[event.event_id] = plate_detection
                     if plate_crop is not None:
                         frame_plate_crops[event.event_id] = plate_crop
 
-                rendered = annotate_frame(
-                    frame,
-                    line_start=line_start,
-                    line_end=line_end,
-                    tracks=tracks,
-                    events=frame_events,
-                    plates=frame_plates,
-                )
+                if writer.annotated_video_active:
+                    draw_started = time.perf_counter()
+                    try:
+                        candidate_labels = {
+                            track_id: self._annotated_candidate_label(event)
+                            for track_id, event in events_by_track.items()
+                        }
+                        event_plates_by_track = {
+                            event.track_id: frame_event_plates[event.event_id]
+                            for event in frame_events
+                            if event.event_id in frame_event_plates
+                        }
+                        rendered = annotate_frame(
+                            frame,
+                            line_start=line_start,
+                            line_end=line_end,
+                            tracks=tracks,
+                            candidate_labels=candidate_labels,
+                            event_plates=event_plates_by_track,
+                            video_timestamp_seconds=timestamp_seconds,
+                            event_count=len(events),
+                        )
+                        output_width, output_height = writer.annotated_frame_size or (metadata.width, metadata.height)
+                        if rendered.shape[1] != output_width or rendered.shape[0] != output_height:
+                            rendered = cv2.resize(rendered, (output_width, output_height), interpolation=cv2.INTER_AREA)
+                        annotated_draw_seconds += time.perf_counter() - draw_started
+                        writer.write_annotated_frame(rendered)
+                    except Exception as exc:
+                        writer.skip_annotated_video(f"annotation_draw_error exception_type={type(exc).__name__}")
                 for event in frame_events:
                     evidence = annotate_frame(
                         frame,
@@ -169,8 +191,6 @@ class VideoProcessor:
                     plate_crop = frame_plate_crops.get(event.event_id)
                     if plate_crop is not None:
                         event.plate_crop_path = writer.save_plate_crop(event.event_id, plate_crop)
-                writer.write_annotated_frame(rendered)
-
                 frame_index += 1
                 summary.processed_frames = frame_index
                 summary.total_candidate_events = len(events)
@@ -187,7 +207,13 @@ class VideoProcessor:
             summary.error = f"{type(exc).__name__}: {exc}"
         finally:
             capture.release()
-            writer.close()
+            if annotated_draw_seconds > 0:
+                LOGGER.info(
+                    "Annotated video drawing completed job_id=%s draw_seconds=%.3f",
+                    effective_job_id,
+                    annotated_draw_seconds,
+                )
+            artifacts.annotated_video = writer.close()
             summary.finished_at = datetime.now(timezone.utc)
 
         result = ProcessingResult(summary=summary, events=events)
@@ -235,6 +261,14 @@ class VideoProcessor:
             LOGGER.warning("Plate pipeline failed for one candidate event", exc_info=True)
             return PlateRecognition(), best_plate.detection, crop_for_output, crop_reason
         return self.plate_validator.select_best(ocr_candidates), best_plate.detection, crop_for_output, crop_reason
+
+    @staticmethod
+    def _annotated_candidate_label(event: LineCrossingEvent) -> str:
+        label = f"{event.vehicle_type} #{event.track_id}"
+        plate_text = event.plate_number or event.plate_raw_text
+        if plate_text:
+            label += f" PLATE {plate_text}"
+        return label.encode("ascii", errors="replace").decode("ascii")
 
     @staticmethod
     def _read_metadata(capture: Any, input_path: Path) -> VideoMetadata:

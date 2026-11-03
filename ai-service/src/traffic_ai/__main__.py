@@ -39,7 +39,11 @@ def main(argv: list[str] | None = None) -> int:
                 config,
                 output=replace(
                     config.output,
-                    save_annotated_video=args.annotated_video or config.output.save_annotated_video,
+                    annotated_video=(
+                        replace(config.output.annotated_video, enabled=True)
+                        if args.annotated_video
+                        else config.output.annotated_video
+                    ),
                     save_evidence_images=False if args.no_evidence else config.output.save_evidence_images,
                 ),
             )
