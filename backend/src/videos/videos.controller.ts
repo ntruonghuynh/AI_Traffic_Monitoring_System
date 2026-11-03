@@ -1,9 +1,9 @@
 import { Body, Controller, Delete, Get, Headers, HttpCode, HttpStatus, Param, ParseUUIDPipe, Post, Query, Res, StreamableFile, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBody, ApiConsumes, ApiHeader, ApiOperation, ApiProduces, ApiResponse, ApiSecurity, ApiTags } from '@nestjs/swagger';
-import { Readable } from 'node:stream';
 import type { Response } from 'express';
 import { InternalTokenGuard } from '../common/guards/internal-token.guard';
+import { streamContentResponse } from '../storage/stream-content';
 import { UploadVideoDto } from './dto/upload-video.dto';
 import { VideoQueryDto } from './dto/video-query.dto';
 import { VideosService } from './videos.service';
@@ -49,33 +49,7 @@ export class VideosController {
     @Res({ passthrough: true }) response: Response,
   ): Promise<StreamableFile> {
     const content = await this.videos.content(id, rangeHeader);
-    response.status(content.statusCode);
-    response.setHeader('Content-Type', content.contentType);
-    response.setHeader('Content-Length', String(content.contentLength));
-    response.setHeader('Cache-Control', 'private, no-store');
-    response.setHeader('Accept-Ranges', 'bytes');
-    response.setHeader('X-Content-Type-Options', 'nosniff');
-    response.setHeader('Content-Disposition', `inline; filename="${id}"`);
-    if (content.contentRange) response.setHeader('Content-Range', content.contentRange);
-    if (content.stream) {
-      const stream = content.stream;
-      let cleaned = false;
-      const cleanup = () => {
-        if (cleaned) return;
-        cleaned = true;
-        response.off('close', onResponseClose);
-        stream.off('end', cleanup);
-        stream.off('close', cleanup);
-      };
-      const onResponseClose = () => {
-        if (!response.writableFinished && !stream.destroyed) stream.destroy();
-        cleanup();
-      };
-      response.once('close', onResponseClose);
-      stream.once('end', cleanup);
-      stream.once('close', cleanup);
-    }
-    return new StreamableFile(content.stream ?? Readable.from([]));
+    return streamContentResponse(content, response, id);
   }
 
   @Get(':id')
