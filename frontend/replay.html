@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#F3F6FB">
+  <title>Phát lại video · Traffic Monitor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css?v=15">
+</head>
+<body data-page="replay">
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Điều hướng chính">
+      <a class="brand" href="index.html" aria-label="Traffic Monitor"><span class="brand-mark" aria-hidden="true">TM</span><span class="brand-copy"><strong>Traffic Monitor</strong><small>HỆ THỐNG GIÁM SÁT</small></span></a>
+      <div class="sidebar-caption">KHÔNG GIAN LÀM VIỆC</div>
+      <nav class="nav-list">
+        <a class="nav-item" href="index.html"><span class="icon-wrap" data-icon="grid"></span><span>Tổng quan</span></a>
+        <a class="nav-item" href="violations.html"><span class="icon-wrap" data-icon="list"></span><span>Danh sách vi phạm</span></a>
+        <a class="nav-item is-active" href="jobs.html" aria-current="page"><span class="icon-wrap" data-icon="video"></span><span>Video &amp; Tiến trình</span></a>
+        <a class="nav-item" href="cameras.html"><span class="icon-wrap" data-icon="camera"></span><span>Quản lý Camera</span></a>
+        <a class="nav-item" href="jobs.html#token-field"><span class="icon-wrap" data-icon="settings"></span><span>Cài đặt &amp; Token</span></a>
+      </nav>
+      <div class="sidebar-foot"><span class="sidebar-foot-dot"></span><span>Phát lại dữ liệu đã được xử lý</span></div>
+    </aside>
+    <main class="main-area">
+      <header class="topbar">
+        <div class="topbar-context"><a href="jobs.html" class="back-link">Video &amp; Tiến trình</a></div>
+        <div class="topbar-tools">
+          <label class="token-control" for="token-field"><span class="token-label">TOKEN PHIÊN</span><input id="token-field" class="token-input" type="password" autocomplete="off" placeholder="Nhập internal token" aria-label="Internal token"></label>
+          <button class="button button-secondary button-small" id="save-token" type="button">Lưu token</button>
+          <div class="system-status" id="system-status" role="status" aria-live="polite"><span class="status-dot is-checking"></span><span class="system-label">Đang kiểm tra hệ thống</span></div>
+        </div>
+      </header>
+      <div class="page-content replay-page">
+        <section class="page-heading">
+          <div><div class="eyebrow">PHÁT LẠI JOB ĐÃ XỬ LÝ</div><h1>Phát lại video</h1><p class="page-subtitle">Job <span id="replay-job-id" class="mono">—</span></p></div>
+          <button class="button button-secondary" id="replay-refresh" type="button"><span class="button-icon" data-icon="refresh"></span>Tải lại</button>
+        </section>
+        <div id="replay-feedback" class="list-feedback" role="status" aria-live="polite"><p>Đang khởi tạo phát lại…</p></div>
+        <div id="replay-layout" class="replay-layout" hidden>
+          <section class="panel replay-player-panel" aria-label="Trình phát video gốc">
+            <div class="replay-disclaimer">Phát lại video gốc. Sự kiện đã được xử lý trước, không phải nhận diện thời gian thực.</div>
+            <video id="replay-video" class="replay-video" controls preload="metadata" playsinline aria-label="Video gốc của job"></video>
+            <div id="replay-video-status" class="list-feedback replay-video-status" role="status" aria-live="polite">Đang tải video…</div>
+            <button id="replay-retry" class="button button-secondary button-small" type="button" hidden>Thử tải video lại</button>
+            <div class="replay-timeline-wrap">
+              <div class="replay-timeline-heading"><h2>Timeline sự kiện</h2><span id="replay-event-count" class="field-label">—</span></div>
+              <div id="replay-timeline" class="replay-timeline" role="group" aria-label="Các mốc sự kiện trên video"><span class="replay-timeline-track"></span></div>
+            </div>
+          </section>
+          <section class="panel replay-events-panel" aria-label="Sự kiện đã xử lý">
+            <div class="panel-heading"><div><h2>Sự kiện đã xử lý</h2><p>Chọn một dòng để chuyển video đến thời điểm đó</p></div></div>
+            <div id="replay-events" class="replay-events-list"></div>
+          </section>
+        </div>
+        <footer class="page-footer">Phát lại video gốc. Sự kiện đã được xử lý trước, không phải nhận diện thời gian thực.</footer>
+      </div>
+    </main>
+  </div>
+  <script src="js/config.js"></script>
+  <script src="js/api.js?v=3"></script>
+  <script src="js/app.js?v=17"></script>
+</body>
+</html>

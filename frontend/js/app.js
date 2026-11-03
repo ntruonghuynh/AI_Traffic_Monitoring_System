@@ -1460,7 +1460,7 @@
     }
 
     function updateJobRow(entry) {
-      const { job, status, elapsed, error, violationLink, platesLink } = entry;
+      const { job, status, elapsed, error, violationLink, platesLink, replayLink } = entry;
       status.className = `status-badge ${jobStatusTone(job.status)}`;
       status.textContent = jobStatusLabel(job.status);
       elapsed.textContent = formatJobRuntime(job);
@@ -1470,6 +1470,8 @@
       violationLink.hidden = !job.id;
       platesLink.href = `plates.html?jobId=${encodeURIComponent(job.id || '')}`;
       platesLink.hidden = !job.id;
+      replayLink.href = `replay.html?jobId=${encodeURIComponent(job.id || '')}`;
+      replayLink.hidden = !job.id || job.status !== 'COMPLETED';
     }
 
     function renderJob(job) {
@@ -1492,14 +1494,16 @@
       violationLink.href = `violations.html?jobId=${encodeURIComponent(job.id || '')}`;
       const platesLink = make('a', 'text-button job-events-link', 'Xem biển số');
       platesLink.href = `plates.html?jobId=${encodeURIComponent(job.id || '')}`;
+      const replayLink = make('a', 'text-button job-events-link', 'Xem phát lại');
+      replayLink.href = `replay.html?jobId=${encodeURIComponent(job.id || '')}`;
       const statusCell = make('td'); statusCell.append(status);
       const elapsedCell = make('td'); elapsedCell.append(elapsed);
       const errorCell = make('td'); errorCell.append(error);
       const actionCell = make('td');
-      const jobLinks = make('div', 'job-row-links'); jobLinks.append(violationLink, platesLink); actionCell.append(jobLinks);
+      const jobLinks = make('div', 'job-row-links'); jobLinks.append(violationLink, platesLink, replayLink); actionCell.append(jobLinks);
       row.append(make('td', 'mono', ''), video, statusCell, elapsedCell, errorCell, actionCell);
       row.firstElementChild.append(idLink);
-      const entry = { job, row, status, elapsed, error, violationLink, platesLink };
+      const entry = { job, row, status, elapsed, error, violationLink, platesLink, replayLink };
       updateJobRow(entry);
       jobRows.set(job.id, entry);
       if (job.status === 'PENDING' || job.status === 'PROCESSING') pollingJobs.add(job.id);
@@ -1620,6 +1624,324 @@
     loadJobs();
     const pollTimer = globalThis.setInterval(pollJobs, 2000);
     window.addEventListener('pagehide', () => { globalThis.clearInterval(pollTimer); pollingJobs.clear(); });
+  }
+
+  function initReplay() {
+    const jobId = new URLSearchParams(window.location.search).get('jobId')?.trim() || '';
+    const jobLabel = document.getElementById('replay-job-id');
+    const feedback = document.getElementById('replay-feedback');
+    const retry = document.getElementById('replay-retry');
+    const video = document.getElementById('replay-video');
+    const videoStatus = document.getElementById('replay-video-status');
+    const timeline = document.getElementById('replay-timeline');
+    const eventList = document.getElementById('replay-events');
+    const layout = document.getElementById('replay-layout');
+    const rowsByEvent = new Map();
+    const objectUrls = new Set();
+    let events = [];
+    let observer = null;
+    let loadSequence = 0;
+    let activeEventId = null;
+    let disposed = false;
+    let authNeeded = false;
+
+    if (jobLabel) jobLabel.textContent = jobId || '—';
+    if (feedback) addFeedback(feedback, 'Đang tải dữ liệu phát lại', 'Đang lấy thông tin job và sự kiện đã xử lý.');
+
+    function revokeObjectUrls() {
+      for (const url of objectUrls) URL.revokeObjectURL(url);
+      objectUrls.clear();
+    }
+
+    function videoTime(seconds) {
+      if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds < 0) return '—';
+      const whole = Math.floor(seconds);
+      return `${String(Math.floor(whole / 60)).padStart(2, '0')}:${String(whole % 60).padStart(2, '0')}`;
+    }
+
+    function showLoadError(title, error) {
+      const details = errorMessage(error);
+      const isAuthError = details.statusCode === 401 || details.statusCode === 403;
+      authNeeded = isAuthError;
+      const message = isAuthError
+        ? 'Cần X-Internal-Token. Nhập và lưu token ở thanh trên rồi thử lại.'
+        : details.statusCode === 404
+          ? 'Không tìm thấy job hoặc danh sách sự kiện của job.'
+          : details.statusCode === 0
+            ? `Không kết nối được dịch vụ. ${details.message}`
+            : details.message;
+      layout.hidden = true;
+      addFeedback(feedback, isAuthError ? 'Cần internal token' : title, message, 'error', details.statusCode, load);
+      retry.hidden = true;
+    }
+
+    function cropAsset(event) {
+      const assets = Array.isArray(event && event.evidenceAssets) ? event.evidenceAssets : [];
+      return assets.find((asset) => asset && asset.assetType === 'PLATE_CROP' && asset.id) || null;
+    }
+
+    function renderTimeline() {
+      timeline.replaceChildren();
+      const duration = video.duration;
+      if (!Number.isFinite(duration) || duration <= 0) return;
+      for (const event of events) {
+        if (typeof event.timestampSeconds !== 'number' || !Number.isFinite(event.timestampSeconds)) continue;
+        const marker = make('button', 'replay-marker');
+        marker.type = 'button';
+        marker.style.left = `${Math.max(0, Math.min(100, event.timestampSeconds / duration * 100))}%`;
+        const description = event.plateNumber || event.vehicleType || 'Sự kiện';
+        marker.title = `${description} · ${videoTime(event.timestampSeconds)}`;
+        marker.setAttribute('aria-label', `${description}, ${videoTime(event.timestampSeconds)}`);
+        marker.addEventListener('click', () => seekToEvent(event));
+        timeline.append(marker);
+      }
+    }
+
+    function setActiveEvent(event) {
+      if (activeEventId === event?.id) return;
+      activeEventId = event?.id || null;
+      for (const [id, row] of rowsByEvent) row.classList.toggle('is-current', id === activeEventId);
+      const row = activeEventId ? rowsByEvent.get(activeEventId) : null;
+      if (row) row.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    }
+
+    function syncCurrentEvent() {
+      const currentTime = video.currentTime;
+      let nearest = null;
+      for (const event of events) {
+        if (typeof event.timestampSeconds !== 'number' || !Number.isFinite(event.timestampSeconds)) continue;
+        const delta = currentTime - event.timestampSeconds;
+        if (delta >= 0 && delta <= 2 && (!nearest || event.timestampSeconds > nearest.timestampSeconds)) nearest = event;
+      }
+      setActiveEvent(nearest);
+    }
+
+    function seekToEvent(event) {
+      if (typeof event.timestampSeconds !== 'number' || !Number.isFinite(event.timestampSeconds)) return;
+      video.currentTime = event.timestampSeconds;
+      const playResult = video.play();
+      if (playResult && typeof playResult.catch === 'function') playResult.catch(() => {});
+    }
+
+    function lazyLoadCrop(event, image, placeholder) {
+      const asset = cropAsset(event);
+      if (!asset) return;
+      let state = 'idle';
+      const loadImage = async () => {
+        if (disposed || state !== 'idle') return;
+        if (!ApiClient.getToken()) {
+          placeholder.textContent = 'Cần internal token để tải ảnh crop.';
+          return;
+        }
+        state = 'loading';
+        placeholder.textContent = 'Đang tải ảnh crop…';
+        try {
+          const blob = await ApiClient.getBlob(`/evidence/${encodeURIComponent(asset.id)}/content`);
+          if (disposed) return;
+          const url = URL.createObjectURL(blob);
+          objectUrls.add(url);
+          image.src = url;
+          image.hidden = false;
+          placeholder.hidden = true;
+          state = 'loaded';
+        } catch (error) {
+          const details = errorMessage(error);
+          const authError = details.statusCode === 401 || details.statusCode === 403;
+          authNeeded = authNeeded || authError;
+          placeholder.textContent = authError
+            ? 'Cần X-Internal-Token để tải ảnh crop.'
+            : `Không tải được ảnh crop${details.statusCode ? ` · HTTP ${details.statusCode}` : ''}.`;
+          state = authError ? 'idle' : 'error';
+        }
+      };
+      if (observer && image.parentElement) {
+        image.parentElement._loadCrop = loadImage;
+        observer.observe(image.parentElement);
+      }
+      else loadImage();
+      image.addEventListener('error', () => {
+        image.hidden = true;
+        placeholder.hidden = false;
+        placeholder.textContent = 'Không hiển thị được ảnh crop.';
+      });
+      image.dataset.loadCrop = 'true';
+    }
+
+    function renderEvents() {
+      eventList.replaceChildren();
+      rowsByEvent.clear();
+      if (observer) observer.disconnect();
+      observer = typeof IntersectionObserver === 'function'
+        ? new IntersectionObserver((entries) => {
+          for (const entry of entries) if (entry.isIntersecting && entry.target._loadCrop) entry.target._loadCrop();
+        }, { root: eventList, rootMargin: '100px 0px' })
+        : null;
+      const sortedEvents = [...events].sort((a, b) => {
+        const left = typeof a.timestampSeconds === 'number' ? a.timestampSeconds : Number.POSITIVE_INFINITY;
+        const right = typeof b.timestampSeconds === 'number' ? b.timestampSeconds : Number.POSITIVE_INFINITY;
+        return left - right;
+      });
+      for (const event of sortedEvents) {
+        const row = make('article', 'replay-event-row');
+        const content = make('button', 'replay-event-main');
+        content.type = 'button';
+        content.addEventListener('click', () => seekToEvent(event));
+        const top = make('span', 'replay-event-top');
+        top.append(make('strong', 'mono', videoTime(event.timestampSeconds)), statusBadge(event.reviewStatus));
+        const vehicle = make('span', 'replay-event-vehicle', event.vehicleType || 'Không có loại xe');
+        const plateText = event.plateNumber || (event.plateRawText ? `Chưa đọc được biển · OCR thô: ${event.plateRawText}` : 'Chưa đọc được biển');
+        const plate = make('span', `replay-event-plate${event.plateNumber ? ' mono' : ''}`, plateText);
+        if (!event.plateNumber && event.plateRawText) plate.title = `OCR thô: ${event.plateRawText}`;
+        const confidence = make('span', 'replay-event-confidence', `Độ tin cậy phát hiện: ${confidenceText(event.confidence)}`);
+        content.append(top, vehicle, plate, confidence);
+        if (typeof event.plateConfidence === 'number' && Number.isFinite(event.plateConfidence)) {
+          content.append(make('span', `replay-event-confidence${isLowConfidence(event.plateConfidence) ? ' confidence-low' : ''}`, `Độ tin cậy OCR: ${confidenceText(event.plateConfidence)}`));
+        }
+        const asset = cropAsset(event);
+        if (asset) {
+          const imageArea = make('div', 'replay-crop-area');
+          const image = make('img', 'replay-crop-image pixelated-image');
+          image.alt = 'Ảnh crop biển số';
+          image.hidden = true;
+          const placeholder = make('span', 'replay-crop-placeholder', ApiClient.getToken() ? 'Ảnh crop sẽ tải khi hiện trong danh sách.' : 'Cần internal token để tải ảnh crop.');
+          imageArea.append(image, placeholder);
+          content.append(imageArea);
+          lazyLoadCrop(event, image, placeholder);
+        }
+        const detailLink = make('a', 'text-button replay-detail-link', 'Mở sự kiện');
+        detailLink.href = `violation.html?id=${encodeURIComponent(event.id || '')}`;
+        detailLink.addEventListener('click', (clickEvent) => clickEvent.stopPropagation());
+        row.append(content, detailLink);
+        eventList.append(row);
+        if (event.id) rowsByEvent.set(event.id, row);
+      }
+      if (!events.length) addFeedback(feedback, 'Job chưa có sự kiện', 'API chưa trả về sự kiện nào cho job này.');
+    }
+
+    async function loadVideo(videoId, sequence) {
+      videoStatus.textContent = 'Đang tải video…';
+      videoStatus.className = 'list-feedback replay-video-status is-loading';
+      retry.hidden = true;
+      video.pause();
+      video.removeAttribute('src');
+      video.load();
+      revokeObjectUrls();
+      try {
+        const blob = await ApiClient.getBlob(`/videos/${encodeURIComponent(videoId)}/content`);
+        if (disposed || sequence !== loadSequence) return;
+        const url = URL.createObjectURL(blob);
+        objectUrls.add(url);
+        video.src = url;
+        videoStatus.textContent = 'Video đã tải';
+        videoStatus.className = 'list-feedback replay-video-status';
+      } catch (error) {
+        if (disposed || sequence !== loadSequence) return;
+        const details = errorMessage(error);
+        if (details.statusCode === 401 || details.statusCode === 403) {
+          authNeeded = true;
+          videoStatus.textContent = 'Cần X-Internal-Token (nhập ở thanh trên).';
+          retry.hidden = false;
+        } else if (details.statusCode === 404) {
+          authNeeded = false;
+          videoStatus.textContent = 'Không tìm thấy video.';
+        } else {
+          authNeeded = false;
+          videoStatus.textContent = `Lỗi tải video${details.statusCode ? ` · HTTP ${details.statusCode}` : ''}: ${details.message}`;
+          retry.hidden = false;
+        }
+        videoStatus.className = 'list-feedback replay-video-status is-error';
+      }
+    }
+
+    async function loadReplay() {
+      const sequence = ++loadSequence;
+      revokeObjectUrls();
+      video.pause();
+      video.removeAttribute('src');
+      video.load();
+      events = [];
+      eventList.replaceChildren();
+      timeline.replaceChildren();
+      rowsByEvent.clear();
+      authNeeded = false;
+      layout.hidden = true;
+      retry.hidden = true;
+      if (!jobId) {
+        addFeedback(feedback, 'Thiếu jobId', 'Mở trang với replay.html?jobId=<id>.', 'error');
+        return;
+      }
+      addFeedback(feedback, 'Đang tải dữ liệu phát lại', 'Đang lấy thông tin job và sự kiện đã xử lý.');
+      let loadingStage = 'job';
+      try {
+        const job = await ApiClient.getJson(`/jobs/${encodeURIComponent(jobId)}`);
+        if (disposed || sequence !== loadSequence) return;
+        if (!job || !job.id) {
+          addFeedback(feedback, 'Không tìm thấy job', 'API không trả về job được yêu cầu.', 'error');
+          return;
+        }
+        const videoId = (job.video && job.video.id) || job.videoId;
+        if (!videoId) {
+          addFeedback(feedback, 'Không có video', 'Job không có videoId để phát lại.', 'error');
+          return;
+        }
+        const allEvents = [];
+        const limit = 100;
+        let page = 1;
+        let totalPages = 1;
+        loadingStage = 'events';
+        do {
+          const query = new URLSearchParams({ jobId, page: String(page), limit: String(limit) });
+          const result = await ApiClient.getJson(`/events?${query.toString()}`);
+          if (disposed || sequence !== loadSequence) return;
+          if (Array.isArray(result && result.data)) allEvents.push(...result.data);
+          totalPages = Math.max(1, Number(result && result.meta && result.meta.totalPages) || 1);
+          page += 1;
+        } while (page <= totalPages);
+        events = allEvents;
+        layout.hidden = false;
+        feedback.replaceChildren();
+        const count = document.getElementById('replay-event-count');
+        if (count) count.textContent = `${events.length} sự kiện`;
+        renderEvents();
+        await loadVideo(videoId, sequence);
+      } catch (error) {
+        if (disposed || sequence !== loadSequence) return;
+        if (loadingStage === 'job' && Number(error && error.statusCode) === 404) {
+          addFeedback(feedback, 'Không tìm thấy job', 'Job này không tồn tại hoặc không còn truy cập được.', 'error', 404);
+        } else showLoadError('Không tải được dữ liệu phát lại', error);
+      }
+    }
+
+    async function load() {
+      try {
+        await loadReplay();
+      } catch (error) {
+        const details = errorMessage(error);
+        if (layout) layout.hidden = true;
+        if (feedback) addFeedback(feedback, 'Không thể khởi tạo phát lại', details.message, 'error', details.statusCode, load);
+      }
+    }
+
+    video.addEventListener('loadedmetadata', renderTimeline);
+    video.addEventListener('durationchange', renderTimeline);
+    video.addEventListener('timeupdate', syncCurrentEvent);
+    retry.addEventListener('click', load);
+    document.getElementById('replay-refresh').addEventListener('click', load);
+    window.addEventListener('internal-token-change', () => {
+      if (jobId && authNeeded) load();
+      for (const image of eventList.querySelectorAll('[data-load-crop="true"]')) {
+        if (image.parentElement && image.parentElement._loadCrop) image.parentElement._loadCrop();
+      }
+    });
+    window.addEventListener('pagehide', () => {
+      disposed = true;
+      if (observer) observer.disconnect();
+      video.pause();
+      video.removeAttribute('src');
+      video.load();
+      revokeObjectUrls();
+    }, { once: true });
+    load();
   }
 
   function cameraStatusLabel(status) {
@@ -1896,6 +2218,17 @@
   if (document.body.dataset.page === 'violation') initDetail();
   if (document.body.dataset.page === 'plates') initPlates();
   if (document.body.dataset.page === 'jobs') initJobs();
+  if (document.body.dataset.page === 'replay') {
+    try {
+      initReplay();
+    } catch (error) {
+      const feedback = document.getElementById('replay-feedback');
+      if (feedback) {
+        const details = errorMessage(error);
+        addFeedback(feedback, 'Không thể khởi tạo phát lại', details.message, 'error', details.statusCode);
+      }
+    }
+  }
   if (document.body.dataset.page === 'dashboard') initDashboard();
   if (document.body.dataset.page === 'cameras') initCameras();
   window.addEventListener('pagehide', () => {
