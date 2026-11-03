@@ -74,12 +74,15 @@ class AnnotatedVideoConfig:
     enabled: bool = True
     max_width: int | None = 1280
     crf: int = 23
+    highlight_seconds: float | None = 3.0
 
     def __post_init__(self) -> None:
         if self.max_width is not None and self.max_width < 2:
             raise ConfigError("output.annotated_video.max_width must be at least 2 or null")
         if not 0 <= self.crf <= 51:
             raise ConfigError("output.annotated_video.crf must be between 0 and 51")
+        if self.highlight_seconds is not None and self.highlight_seconds < 0:
+            raise ConfigError("output.annotated_video.highlight_seconds must be non-negative or null")
 
 
 @dataclass(frozen=True, slots=True)
@@ -227,6 +230,11 @@ def load_config(path: str | Path | None = None) -> ServiceConfig:
                 enabled=bool(annotated_video.get("enabled", True)),
                 max_width=None if max_annotated_width is None else int(max_annotated_width),
                 crf=int(annotated_video.get("crf", 23)),
+                highlight_seconds=(
+                    None
+                    if annotated_video.get("highlight_seconds", 3.0) is None
+                    else float(annotated_video.get("highlight_seconds", 3.0))
+                ),
             ),
             legacy_csv=bool(output.get("legacy_csv", False)),
             legacy_sqlite=bool(output.get("legacy_sqlite", False)),

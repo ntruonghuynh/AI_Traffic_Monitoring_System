@@ -46,6 +46,7 @@ output:
     enabled: true
     max_width: 1280
     crf: 23
+    highlight_seconds: 3.0
   legacy_csv: false
   legacy_sqlite: false
   progress_interval_frames: 100
