@@ -42,8 +42,10 @@ ocr:
 
 output:
   save_evidence_images: true
-  save_annotated_video: false
-  video_codec: mp4v
+  annotated_video:
+    enabled: true
+    max_width: 1280
+    crf: 23
   legacy_csv: false
   legacy_sqlite: false
   progress_interval_frames: 100

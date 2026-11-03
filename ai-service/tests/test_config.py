@@ -9,6 +9,9 @@ def test_environment_model_and_device_overrides(monkeypatch) -> None:
     assert config.vehicle_model_path.name == "vehicle.pt"
     assert config.line_crossing.direction == "positive_to_negative"
     assert config.plate_detection.min_crop_size == 20
+    assert config.output.annotated_video.enabled is True
+    assert config.output.annotated_video.max_width == 1280
+    assert config.output.annotated_video.crf == 23
 
 
 def test_plate_crop_minimum_size_is_read_from_plate_detection_section(tmp_path) -> None:
@@ -17,3 +20,16 @@ def test_plate_crop_minimum_size_is_read_from_plate_detection_section(tmp_path) 
     assert source.count("  min_crop_size: 20\n") == 1
     config_path.write_text(source.replace("  min_crop_size: 20\n", "  min_crop_size: 32\n"), encoding="utf-8")
     assert load_config(config_path).plate_detection.min_crop_size == 32
+
+
+def test_annotated_video_options_are_read_from_yaml(tmp_path) -> None:
+    config_path = tmp_path / "custom.yaml"
+    source = default_config_path().read_text(encoding="utf-8")
+    source = source.replace("    enabled: true\n    max_width: 1280\n    crf: 23\n", "    enabled: false\n    max_width: null\n    crf: 31\n")
+    config_path.write_text(source, encoding="utf-8")
+
+    config = load_config(config_path)
+
+    assert config.output.annotated_video.enabled is False
+    assert config.output.annotated_video.max_width is None
+    assert config.output.annotated_video.crf == 31
