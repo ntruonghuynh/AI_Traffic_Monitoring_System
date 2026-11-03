@@ -1,45 +1,16 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type { ReadStream } from 'node:fs';
 import { basename } from 'node:path';
 import { paginate } from '../common/dto/pagination-query.dto';
 import { PrismaService } from '../prisma/prisma.service';
-import { LocalStorageService, StorageByteRange } from '../storage/local-storage.service';
+import { LocalStorageService } from '../storage/local-storage.service';
+import { prepareStreamContent, StreamContent } from '../storage/stream-content';
 import { UploadVideoDto } from './dto/upload-video.dto';
 import { VideoQueryDto } from './dto/video-query.dto';
 import { validateVideoFile } from './video-validation';
 
-interface ParsedByteRange { range: StorageByteRange | null; unsatisfiable: boolean }
-
-export interface VideoContent {
-  stream: ReadStream | null;
-  statusCode: 200 | 206 | 416;
-  contentType: string;
-  contentLength: number;
-  contentRange?: string;
-}
-
-export function parseByteRange(header: string, size: number): ParsedByteRange {
-  const match = /^bytes=(\d*)-(\d*)$/i.exec(header.trim());
-  if (!match || (!match[1] && !match[2]) || size <= 0) return { range: null, unsatisfiable: true };
-
-  let start: number;
-  let end: number;
-  if (!match[1]) {
-    const suffixLength = Number(match[2]);
-    if (!Number.isSafeInteger(suffixLength) || suffixLength <= 0) return { range: null, unsatisfiable: true };
-    start = Math.max(0, size - suffixLength);
-    end = size - 1;
-  } else {
-    start = Number(match[1]);
-    end = match[2] ? Number(match[2]) : size - 1;
-    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start >= size || end < start) {
-      return { range: null, unsatisfiable: true };
-    }
-    end = Math.min(end, size - 1);
-  }
-  return { range: { start, end }, unsatisfiable: false };
-}
+export type VideoContent = StreamContent;
+export { parseByteRange } from '../storage/stream-content';
 
 @Injectable()
 export class VideosService {
@@ -116,33 +87,7 @@ export class VideosService {
       throw error;
     }
 
-    const contentType = this.safeVideoMimeType(video.mimeType);
-    if (rangeHeader) {
-      const parsed = parseByteRange(rangeHeader, storedFile.size);
-      if (parsed.unsatisfiable || !parsed.range) {
-        return {
-          stream: null,
-          statusCode: 416,
-          contentType,
-          contentLength: 0,
-          contentRange: `bytes */${storedFile.size}`,
-        };
-      }
-      return {
-        stream: storedFile.createReadStream(parsed.range),
-        statusCode: 206,
-        contentType,
-        contentLength: parsed.range.end - parsed.range.start + 1,
-        contentRange: `bytes ${parsed.range.start}-${parsed.range.end}/${storedFile.size}`,
-      };
-    }
-
-    return {
-      stream: storedFile.createReadStream(),
-      statusCode: 200,
-      contentType,
-      contentLength: storedFile.size,
-    };
+    return prepareStreamContent(storedFile, this.safeVideoMimeType(video.mimeType), rangeHeader);
   }
 
   async findJobs(id: string) {
