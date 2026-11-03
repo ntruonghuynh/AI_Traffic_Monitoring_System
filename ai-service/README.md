@@ -112,7 +112,7 @@ Các nhóm chính:
 - `line_crossing`: hai điểm vạch, direction, tolerance, duplicate policy.
 - `plate_detection`: model, threshold và `min_crop_size` (cạnh nhỏ nhất để lưu crop biển số; mặc định `20` px, có thể override trong YAML).
 - `ocr`: languages, confidence tối thiểu, preprocessing.
-- `output`: evidence, `annotated_video`, CSV/SQLite compatibility và progress interval. Video chú thích mặc định bật; `output.annotated_video.enabled` có thể tắt, `max_width` mặc định `1280` (đặt `null` để giữ nguyên chiều rộng), `crf` mặc định `23`.
+- `output`: evidence, `annotated_video`, CSV/SQLite compatibility và progress interval. Video chú thích mặc định bật; `output.annotated_video.enabled` có thể tắt, `max_width` mặc định `1280` (đặt `null` để giữ nguyên chiều rộng), `crf` mặc định `23`. `highlight_seconds` mặc định `3.0`; sau khoảng đó xe trở lại khung xám và nhãn biến mất. Đặt `0` hoặc `null` để giữ tô đỏ đến hết video.
 
 Video chú thích được ghi tạm trong lúc xử lý rồi mã hóa H.264 bằng `ffmpeg`; cần cài ffmpeg (macOS: `brew install ffmpeg`). Nếu không tìm thấy ffmpeg hoặc bước vẽ/mã hóa lỗi, service bỏ qua `annotated_video.mp4`, ghi cảnh báo và vẫn giữ kết quả job. Video không có âm thanh. Video có thể chứa biển số xe, là dữ liệu cá nhân; cần áp dụng quyền truy cập và thời hạn lưu trữ phù hợp.
 

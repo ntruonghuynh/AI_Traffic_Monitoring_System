@@ -16,6 +16,7 @@ from traffic_ai.ocr.plate_detector import PlateCrop
 from traffic_ai.ocr.plate_validator import PlateValidator
 from traffic_ai.schemas import (
     BoundingBox,
+    LineCrossingEvent,
     PlateCropReason,
     PlateDetection,
     Point,
@@ -620,3 +621,39 @@ def test_annotated_frame_highlights_past_candidates_and_only_candidate_plate_box
     assert tuple(int(value) for value in rendered[80, 100]) == (192, 192, 192)
     assert tuple(int(value) for value in rendered[80, 30]) == (255, 0, 0)
     assert tuple(int(value) for value in rendered[80, 45]) == (255, 0, 0)
+
+
+def _candidate_event(*, plate_number: str | None, plate_raw_text: str | None) -> LineCrossingEvent:
+    return LineCrossingEvent(
+        event_id="event-1",
+        track_id=1,
+        vehicle_type="car",
+        confidence=0.9,
+        frame_index=10,
+        timestamp_seconds=1.0,
+        crossing_direction="positive_to_negative",
+        plate_number=plate_number,
+        plate_raw_text=plate_raw_text,
+    )
+
+
+def test_annotated_label_uses_only_validated_plate_number() -> None:
+    raw_only = _candidate_event(plate_number=None, plate_raw_text="2A")
+    valid_plate = _candidate_event(plate_number="59A12345", plate_raw_text="59A 12345")
+
+    raw_label = VideoProcessor._annotated_candidate_label(raw_only)
+    valid_label = VideoProcessor._annotated_candidate_label(valid_plate)
+
+    assert raw_label == "car #1"
+    assert "2A" not in raw_label
+    assert "PLATE 59A12345" in valid_label
+    assert "59A 12345" not in valid_label
+
+
+def test_annotated_candidate_highlight_expires_after_configured_seconds() -> None:
+    event = _candidate_event(plate_number="59A12345", plate_raw_text="59A 12345")
+
+    assert VideoProcessor._is_annotated_candidate_active(event, 3.9, 3.0)
+    assert not VideoProcessor._is_annotated_candidate_active(event, 4.01, 3.0)
+    assert VideoProcessor._is_annotated_candidate_active(event, 100.0, 0)
+    assert VideoProcessor._is_annotated_candidate_active(event, 100.0, None)
