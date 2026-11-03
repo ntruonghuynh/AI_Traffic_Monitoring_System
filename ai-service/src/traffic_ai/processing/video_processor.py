@@ -154,6 +154,11 @@ class VideoProcessor:
                         candidate_labels = {
                             track_id: self._annotated_candidate_label(event)
                             for track_id, event in events_by_track.items()
+                            if self._is_annotated_candidate_active(
+                                event,
+                                timestamp_seconds,
+                                self.config.output.annotated_video.highlight_seconds,
+                            )
                         }
                         event_plates_by_track = {
                             event.track_id: frame_event_plates[event.event_id]
@@ -265,10 +270,21 @@ class VideoProcessor:
     @staticmethod
     def _annotated_candidate_label(event: LineCrossingEvent) -> str:
         label = f"{event.vehicle_type} #{event.track_id}"
-        plate_text = event.plate_number or event.plate_raw_text
+        plate_text = event.plate_number
         if plate_text:
             label += f" PLATE {plate_text}"
         return label.encode("ascii", errors="replace").decode("ascii")
+
+    @staticmethod
+    def _is_annotated_candidate_active(
+        event: LineCrossingEvent,
+        timestamp_seconds: float,
+        highlight_seconds: float | None,
+    ) -> bool:
+        if highlight_seconds is None or highlight_seconds == 0:
+            return True
+        elapsed_seconds = timestamp_seconds - event.timestamp_seconds
+        return 0 <= elapsed_seconds <= highlight_seconds
 
     @staticmethod
     def _read_metadata(capture: Any, input_path: Path) -> VideoMetadata:
