@@ -1,3 +1,5 @@
+import pytest
+
 from traffic_ai.config import default_config_path, load_config
 
 
@@ -12,6 +14,7 @@ def test_environment_model_and_device_overrides(monkeypatch) -> None:
     assert config.output.annotated_video.enabled is True
     assert config.output.annotated_video.max_width == 1280
     assert config.output.annotated_video.crf == 23
+    assert config.output.annotated_video.highlight_seconds == 3.0
 
 
 def test_plate_crop_minimum_size_is_read_from_plate_detection_section(tmp_path) -> None:
@@ -33,3 +36,15 @@ def test_annotated_video_options_are_read_from_yaml(tmp_path) -> None:
     assert config.output.annotated_video.enabled is False
     assert config.output.annotated_video.max_width is None
     assert config.output.annotated_video.crf == 31
+
+
+@pytest.mark.parametrize("value", ["0", "null"])
+def test_annotated_video_highlight_can_be_disabled_from_yaml(tmp_path, value: str) -> None:
+    config_path = tmp_path / "custom.yaml"
+    source = default_config_path().read_text(encoding="utf-8")
+    source = source.replace("    highlight_seconds: 3.0\n", f"    highlight_seconds: {value}\n")
+    config_path.write_text(source, encoding="utf-8")
+
+    config = load_config(config_path)
+
+    assert config.output.annotated_video.highlight_seconds == (None if value == "null" else 0)
