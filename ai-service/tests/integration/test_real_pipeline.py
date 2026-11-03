@@ -27,7 +27,11 @@ def test_real_pipeline_when_assets_are_explicitly_supplied(monkeypatch, tmp_path
     config = load_config("configs/default.yaml")
     config = replace(
         config,
-        output=replace(config.output, save_annotated_video=False, progress_interval_frames=0),
+        output=replace(
+            config.output,
+            annotated_video=replace(config.output.annotated_video, enabled=False),
+            progress_interval_frames=0,
+        ),
     )
     result = build_processor(config).process(video, tmp_path / "result")  # type: ignore[arg-type]
     assert result.summary.status is ProcessingStatus.COMPLETED
