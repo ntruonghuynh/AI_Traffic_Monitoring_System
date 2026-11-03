@@ -70,10 +70,22 @@ class OCRConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class AnnotatedVideoConfig:
+    enabled: bool = True
+    max_width: int | None = 1280
+    crf: int = 23
+
+    def __post_init__(self) -> None:
+        if self.max_width is not None and self.max_width < 2:
+            raise ConfigError("output.annotated_video.max_width must be at least 2 or null")
+        if not 0 <= self.crf <= 51:
+            raise ConfigError("output.annotated_video.crf must be between 0 and 51")
+
+
+@dataclass(frozen=True, slots=True)
 class OutputConfig:
     save_evidence_images: bool = True
-    save_annotated_video: bool = False
-    video_codec: str = "mp4v"
+    annotated_video: AnnotatedVideoConfig = field(default_factory=AnnotatedVideoConfig)
     legacy_csv: bool = False
     legacy_sqlite: bool = False
     progress_interval_frames: int = 100
@@ -170,6 +182,8 @@ def load_config(path: str | Path | None = None) -> ServiceConfig:
     plate = _section(loaded, "plate_detection")
     ocr = _section(loaded, "ocr")
     output = _section(loaded, "output")
+    annotated_video = _section(output, "annotated_video")
+    max_annotated_width = annotated_video.get("max_width", 1280)
 
     return ServiceConfig(
         device=str(loaded.get("device", "auto")),
@@ -209,8 +223,11 @@ def load_config(path: str | Path | None = None) -> ServiceConfig:
         ),
         output=OutputConfig(
             save_evidence_images=bool(output.get("save_evidence_images", True)),
-            save_annotated_video=bool(output.get("save_annotated_video", False)),
-            video_codec=str(output.get("video_codec", "mp4v")),
+            annotated_video=AnnotatedVideoConfig(
+                enabled=bool(annotated_video.get("enabled", True)),
+                max_width=None if max_annotated_width is None else int(max_annotated_width),
+                crf=int(annotated_video.get("crf", 23)),
+            ),
             legacy_csv=bool(output.get("legacy_csv", False)),
             legacy_sqlite=bool(output.get("legacy_sqlite", False)),
             progress_interval_frames=int(output.get("progress_interval_frames", 100)),

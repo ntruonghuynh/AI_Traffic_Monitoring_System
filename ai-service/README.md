@@ -112,7 +112,9 @@ Các nhóm chính:
 - `line_crossing`: hai điểm vạch, direction, tolerance, duplicate policy.
 - `plate_detection`: model, threshold và `min_crop_size` (cạnh nhỏ nhất để lưu crop biển số; mặc định `20` px, có thể override trong YAML).
 - `ocr`: languages, confidence tối thiểu, preprocessing.
-- `output`: evidence, annotated video, CSV/SQLite compatibility và progress interval.
+- `output`: evidence, `annotated_video`, CSV/SQLite compatibility và progress interval. Video chú thích mặc định bật; `output.annotated_video.enabled` có thể tắt, `max_width` mặc định `1280` (đặt `null` để giữ nguyên chiều rộng), `crf` mặc định `23`.
+
+Video chú thích được ghi tạm trong lúc xử lý rồi mã hóa H.264 bằng `ffmpeg`; cần cài ffmpeg (macOS: `brew install ffmpeg`). Nếu không tìm thấy ffmpeg hoặc bước vẽ/mã hóa lỗi, service bỏ qua `annotated_video.mp4`, ghi cảnh báo và vẫn giữ kết quả job. Video không có âm thanh. Video có thể chứa biển số xe, là dữ liệu cá nhân; cần áp dụng quyền truy cập và thời hạn lưu trữ phù hợp.
 
 Mặc định vạch dùng normalized coordinates. Với line từ trái sang phải, `positive_to_negative` nghĩa là bottom-center di chuyển từ phía dưới lên phía trên vạch.
 
@@ -126,7 +128,7 @@ python -m traffic_ai \
   --output /path/to/results
 ```
 
-Ghi thêm annotated video và chọn CPU:
+Chạy với CPU (annotated video được bật mặc định theo cấu hình; cờ `--annotated-video` vẫn có thể dùng để bật rõ ràng nếu cấu hình tắt):
 
 ```bash
 python -m traffic_ai \

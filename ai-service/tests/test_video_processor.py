@@ -1,5 +1,7 @@
 import json
 import logging
+import shutil
+import subprocess
 from dataclasses import replace
 from pathlib import Path
 
@@ -21,6 +23,9 @@ from traffic_ai.schemas import (
     TrackedVehicle,
     VehicleDetection,
 )
+
+
+REAL_VIDEO_CAPTURE = cv2.VideoCapture
 
 
 class FakeTracker:
@@ -225,6 +230,197 @@ def test_headless_pipeline_writes_json_and_evidence(monkeypatch, tmp_path: Path)
     assert fake_capture.released is True
 
 
+def test_annotated_video_is_transcoded_with_all_frames_and_scaled_width(monkeypatch, tmp_path: Path, caplog) -> None:
+    if not shutil.which("ffmpeg"):
+        pytest.skip("ffmpeg is required to transcode annotated video")
+    caplog.set_level(logging.INFO)
+    config = load_config("configs/default.yaml")
+    config = replace(
+        config,
+        output=replace(
+            config.output,
+            annotated_video=replace(config.output.annotated_video, enabled=True, max_width=64),
+        ),
+    )
+
+    result, output_dir = run_processor(
+        monkeypatch,
+        tmp_path,
+        detector=NoPlateDetector(),
+        recognizer=EmptyRecognizer(),
+        config=config,
+    )
+
+    video_path = output_dir / "annotated_video.mp4"
+    assert result.summary.status is ProcessingStatus.COMPLETED
+    assert result.summary.processed_frames == 3
+    assert result.summary.artifacts.annotated_video == "annotated_video.mp4"
+    assert video_path.is_file()
+    capture = REAL_VIDEO_CAPTURE(str(video_path))
+    assert capture.isOpened()
+    width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    assert width == 64
+    assert width % 2 == 0
+    assert height % 2 == 0
+    decoded_frames = 0
+    while True:
+        success, _frame = capture.read()
+        if not success:
+            break
+        decoded_frames += 1
+    capture.release()
+    assert decoded_frames == result.summary.processed_frames == 3
+    ffprobe_path = shutil.which("ffprobe")
+    if ffprobe_path:
+        probe = subprocess.run(
+            [
+                ffprobe_path,
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "stream=codec_name,pix_fmt",
+                "-of",
+                "json",
+                str(video_path),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        stream = json.loads(probe.stdout)["streams"][0]
+        assert stream["codec_name"] == "h264"
+        assert stream["pix_fmt"] == "yuv420p"
+    assert "Annotated video drawing completed job_id=job-test" in caplog.text
+    assert "Annotated video encoded job_id=job-test" in caplog.text
+    assert not list(output_dir.glob(".annotated-video-*.mp4"))
+
+
+def test_annotated_video_is_skipped_without_ffmpeg_and_job_completes(monkeypatch, tmp_path: Path, caplog) -> None:
+    monkeypatch.setattr("traffic_ai.storage.result_writer.shutil.which", lambda _name: None)
+    caplog.set_level(logging.WARNING)
+
+    result, output_dir = run_processor(
+        monkeypatch,
+        tmp_path,
+        detector=NoPlateDetector(),
+        recognizer=EmptyRecognizer(),
+    )
+
+    assert result.summary.status is ProcessingStatus.COMPLETED
+    assert (output_dir / "results.json").is_file()
+    assert result.summary.artifacts.annotated_video is None
+    assert not (output_dir / "annotated_video.mp4").exists()
+    assert "job_id=job-test" in caplog.text
+    assert "brew install ffmpeg" in caplog.text
+
+
+def test_annotated_video_can_be_disabled(monkeypatch, tmp_path: Path) -> None:
+    config = load_config("configs/default.yaml")
+    config = replace(
+        config,
+        output=replace(
+            config.output,
+            annotated_video=replace(config.output.annotated_video, enabled=False),
+        ),
+    )
+
+    result, output_dir = run_processor(
+        monkeypatch,
+        tmp_path,
+        detector=NoPlateDetector(),
+        recognizer=EmptyRecognizer(),
+        config=config,
+    )
+
+    assert result.summary.status is ProcessingStatus.COMPLETED
+    assert result.summary.artifacts.annotated_video is None
+    assert not (output_dir / "annotated_video.mp4").exists()
+
+
+def test_annotated_video_draw_error_does_not_fail_job_or_change_evidence(
+    monkeypatch, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    class FakeWriter:
+        def __init__(self, path, _codec, _fps, _size):
+            Path(path).write_bytes(b"temporary video")
+
+        def isOpened(self):
+            return True
+
+        def write(self, _frame):
+            pass
+
+        def release(self):
+            pass
+
+    monkeypatch.setattr("traffic_ai.storage.result_writer.shutil.which", lambda _name: "/mock/ffmpeg")
+    monkeypatch.setattr("traffic_ai.storage.result_writer.cv2.VideoWriter", FakeWriter)
+    original_annotate_frame = annotate_frame
+
+    def fail_video_annotation(*args, **kwargs):
+        if kwargs.get("candidate_labels") is not None:
+            raise OSError("simulated disk full detail")
+        return original_annotate_frame(*args, **kwargs)
+
+    monkeypatch.setattr("traffic_ai.processing.video_processor.annotate_frame", fail_video_annotation)
+    caplog.set_level(logging.WARNING)
+
+    result, output_dir = run_processor(
+        monkeypatch,
+        tmp_path,
+        detector=NoPlateDetector(),
+        recognizer=EmptyRecognizer(),
+    )
+
+    assert result.summary.status is ProcessingStatus.COMPLETED
+    assert (output_dir / "results.json").is_file()
+    assert (output_dir / result.events[0].evidence_path).is_file()
+    assert result.summary.artifacts.annotated_video is None
+    assert "job_id=job-test reason=annotation_draw_error exception_type=OSError" in caplog.text
+    assert "simulated disk full detail" not in caplog.text
+
+
+def test_annotated_video_transcode_error_does_not_fail_job(monkeypatch, tmp_path: Path, caplog) -> None:
+    class FakeWriter:
+        def __init__(self, path, _codec, _fps, _size):
+            Path(path).write_bytes(b"temporary video")
+
+        def isOpened(self):
+            return True
+
+        def write(self, _frame):
+            pass
+
+        def release(self):
+            pass
+
+    def fail_transcode(*_args, **_kwargs):
+        raise OSError("simulated encoder failure")
+
+    monkeypatch.setattr("traffic_ai.storage.result_writer.shutil.which", lambda _name: "/mock/ffmpeg")
+    monkeypatch.setattr("traffic_ai.storage.result_writer.cv2.VideoWriter", FakeWriter)
+    monkeypatch.setattr("traffic_ai.storage.result_writer.subprocess.run", fail_transcode)
+    caplog.set_level(logging.WARNING)
+
+    result, output_dir = run_processor(
+        monkeypatch,
+        tmp_path,
+        detector=NoPlateDetector(),
+        recognizer=EmptyRecognizer(),
+    )
+
+    assert result.summary.status is ProcessingStatus.COMPLETED
+    assert (output_dir / "results.json").is_file()
+    assert (output_dir / result.events[0].evidence_path).is_file()
+    assert result.summary.artifacts.annotated_video is None
+    assert "job_id=job-test reason=transcode_error exception_type=OSError" in caplog.text
+    assert "simulated encoder failure" not in caplog.text
+    assert not list(output_dir.glob(".annotated-video-*.mp4"))
+
+
 def test_plate_crop_is_written_and_serialized_when_ocr_returns_no_text(monkeypatch, tmp_path: Path) -> None:
     crop = np.full((24, 48, 3), 80, dtype=np.uint8)
     recognizer = EmptyRecognizer()
@@ -399,3 +595,28 @@ def test_candidate_label_near_top_edge_stays_in_frame_without_covering_vehicle()
 
     assert tuple(int(value) for value in rendered[5, 165]) == (0, 0, 255)
     assert tuple(int(value) for value in rendered[20, 100]) == (0, 0, 0)
+
+
+def test_annotated_frame_highlights_past_candidates_and_only_candidate_plate_boxes() -> None:
+    frame = np.zeros((160, 200, 3), dtype=np.uint8)
+    tracks = [
+        TrackedVehicle(VehicleDetection(BoundingBox(20, 60, 60, 110), 0.9, 2, "car"), 1),
+        TrackedVehicle(VehicleDetection(BoundingBox(100, 60, 140, 110), 0.8, 2, "car"), 2),
+    ]
+    plate = PlateDetection(BoundingBox(30, 80, 45, 90), 0.9, 0, "license_plate")
+
+    rendered = annotate_frame(
+        frame,
+        line_start=Point(0, 145),
+        line_end=Point(199, 145),
+        tracks=tracks,
+        candidate_labels={1: "car #1 PLATE 59A12345"},
+        event_plates={1: plate},
+        video_timestamp_seconds=61.0,
+        event_count=2,
+    )
+
+    assert tuple(int(value) for value in rendered[80, 20]) == (0, 0, 255)
+    assert tuple(int(value) for value in rendered[80, 100]) == (192, 192, 192)
+    assert tuple(int(value) for value in rendered[80, 30]) == (255, 0, 0)
+    assert tuple(int(value) for value in rendered[80, 45]) == (255, 0, 0)
